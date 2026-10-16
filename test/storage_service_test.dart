@@ -247,4 +247,28 @@ void main() {
       expect(await service.loadDefaultDownloadToLocal(), isFalse);
     },
   );
+
+  test(
+    'download task filter preferences round trip',
+    () async {
+      expect(await service.loadDownloadTasksGroupByCategory(), isTrue);
+      expect(await service.loadDownloadTasksCategoryFilter(), isEmpty);
+
+      await service.saveDownloadTasksGroupByCategory(false);
+      expect(await service.loadDownloadTasksGroupByCategory(), isFalse);
+
+      // 空串分类代表「未分类」，必须能存下来
+      await service.saveDownloadTasksCategoryFilter(['HD', '']);
+      expect(await service.loadDownloadTasksCategoryFilter(), ['HD', '']);
+
+      await service.saveDownloadTasksCategoryFilter([]);
+      expect(await service.loadDownloadTasksCategoryFilter(), isEmpty);
+
+      await service.saveDownloadTasksTagFilter(['Kamept']);
+      expect(await service.loadDownloadTasksTagFilter(), ['Kamept']);
+
+      await service.saveDownloadTasksTagFilter([]);
+      expect(await service.loadDownloadTasksTagFilter(), isEmpty);
+    },
+  );
 }

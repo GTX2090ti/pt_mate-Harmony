@@ -170,7 +170,13 @@ class BackupService {
     // 收集下载器密码
     final downloaderPasswords = <String, String>{};
     for (final config in downloaderConfigs) {
-      final configId = config['id'] as String?;
+      // [移植适配-OHOS] 防御：某些历史/导入数据中 config['id'] 可能是
+      // 非 String 类型（曾报 type 'List<Object?>' is not a subtype of
+      // type 'String?'）。单个条目不合法不应让整个备份失败。
+      final rawId = config['id'];
+      final configId = rawId is String ? rawId : null;
+      // ignore: avoid_print
+      print('📤 备份收集: downloaderConfig id 类型=${rawId.runtimeType}');
       if (configId != null) {
         final password = await _storageService.loadDownloaderPassword(configId);
         if (password != null && password.isNotEmpty) {
@@ -215,7 +221,8 @@ class BackupService {
     final downloaderCategoriesCache = <String, List<String>>{};
     final downloaderTagsCache = <String, List<String>>{};
     for (final config in downloaderConfigs) {
-      final configId = config['id'] as String?;
+      final rawId = config['id'];
+      final configId = rawId is String ? rawId : null;
       if (configId != null) {
         downloaderCategoriesCache[configId] = await safeList(
           'downloaderCategories($configId)',

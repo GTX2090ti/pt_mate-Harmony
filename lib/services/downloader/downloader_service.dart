@@ -337,6 +337,105 @@ class DownloaderService {
     }
   }
 
+  /// 获取原始偏好（仅 qBittorrent）
+  Future<Map<String, dynamic>> getPreferences({
+    required DownloaderConfig config,
+    required String password,
+  }) async {
+    final client = DownloaderFactory.getClient(
+      config: config,
+      password: password,
+    );
+    if (client is QbittorrentClient) {
+      return await client.getPreferencesRaw();
+    }
+    throw Exception('当前下载器不支持服务器设置');
+  }
+
+  /// 写入偏好增量（仅 qBittorrent）
+  Future<void> setPreferences({
+    required DownloaderConfig config,
+    required String password,
+    required Map<String, dynamic> deltas,
+  }) async {
+    final client = DownloaderFactory.getClient(
+      config: config,
+      password: password,
+    );
+    if (client is QbittorrentClient) {
+      await client.setPreferences(deltas);
+      return;
+    }
+    throw Exception('当前下载器不支持服务器设置');
+  }
+
+  /// 获取分类明细：名称 -> 保存路径（仅 qBittorrent）
+  Future<Map<String, String>> getCategoryDetails({
+    required DownloaderConfig config,
+    required String password,
+  }) async {
+    final client = DownloaderFactory.getClient(
+      config: config,
+      password: password,
+    );
+    if (client is QbittorrentClient) {
+      return await client.getCategoryDetails();
+    }
+    throw Exception('当前下载器不支持分类管理');
+  }
+
+  /// 修改分类的保存路径（仅 qBittorrent）
+  Future<void> setCategorySavePath({
+    required DownloaderConfig config,
+    required String password,
+    required String category,
+    required String savePath,
+  }) async {
+    final client = DownloaderFactory.getClient(
+      config: config,
+      password: password,
+    );
+    if (client is QbittorrentClient) {
+      await client.setCategorySavePath(category, savePath);
+      return;
+    }
+    throw Exception('当前下载器不支持分类管理');
+  }
+
+  /// 新建标签（仅 qBittorrent）
+  Future<void> createTags({
+    required DownloaderConfig config,
+    required String password,
+    required List<String> tags,
+  }) async {
+    final client = DownloaderFactory.getClient(
+      config: config,
+      password: password,
+    );
+    if (client is QbittorrentClient) {
+      await client.createTags(tags);
+      return;
+    }
+    throw Exception('当前下载器不支持标签管理');
+  }
+
+  /// 删除标签（仅 qBittorrent）
+  Future<void> deleteTags({
+    required DownloaderConfig config,
+    required String password,
+    required List<String> tags,
+  }) async {
+    final client = DownloaderFactory.getClient(
+      config: config,
+      password: password,
+    );
+    if (client is QbittorrentClient) {
+      await client.deleteTags(tags);
+      return;
+    }
+    throw Exception('当前下载器不支持标签管理');
+  }
+
   /// 获取任务连接节点（仅 qBittorrent）
   Future<List<TorrentPeer>> getTorrentPeers({
     required DownloaderConfig config,

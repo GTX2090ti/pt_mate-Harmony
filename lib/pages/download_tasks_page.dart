@@ -33,6 +33,20 @@ enum SortField {
 /// qBittorrent 用于表示"无限"ETA 的值（100天，单位：秒）
 const int kInfinityEtaInSeconds = 8640000;
 
+extension SortFieldLabel on SortField {
+  String get label => switch (this) {
+    SortField.name => '名称',
+    SortField.dlSpeed => '下载速度',
+    SortField.upSpeed => '上传速度',
+    SortField.addedOn => '添加时间',
+    SortField.completionOn => '完成时间',
+    SortField.ratio => '分享率',
+    SortField.size => '大小',
+    SortField.progress => '进度',
+  };
+}
+
+
 class DownloadTasksPage extends StatefulWidget {
   const DownloadTasksPage({super.key});
 
@@ -80,6 +94,18 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
   // 状态筛选 Tab（qB 风格）
   _TaskFilter _statusFilter = _TaskFilter.all;
 
+  // 按分类折叠的分组（key 为分类名，空串表示未分类）
+  final Set<String> _collapsedCategories = {};
+
+  // 筛选面板：是否按分类分组展示
+  bool _groupByCategory = true;
+
+  // 筛选面板：多选中的分类，空集表示不限
+  final Set<String> _categoryFilter = {};
+
+  // 筛选面板：多选中的标签（命中任一即显示），空集表示不限
+  final Set<String> _tagFilter = {};
+
   @override
   void initState() {
     super.initState();
@@ -89,6 +115,20 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
           _showAllTasks = value;
         });
       }
+    });
+    StorageService.instance.loadDownloadTasksCollapsedCategories().then((
+      value,
+    ) {
+      if (mounted) setState(() => _collapsedCategories.addAll(value));
+    });
+    StorageService.instance.loadDownloadTasksGroupByCategory().then((value) {
+      if (mounted) setState(() => _groupByCategory = value);
+    });
+    StorageService.instance.loadDownloadTasksCategoryFilter().then((value) {
+      if (mounted) setState(() => _categoryFilter.addAll(value));
+    });
+    StorageService.instance.loadDownloadTasksTagFilter().then((value) {
+      if (mounted) setState(() => _tagFilter.addAll(value));
     });
     _loadDownloaderConfig();
     _startAutoRefresh();
@@ -882,79 +922,31 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                   ),
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _buildQuickChip(
+                icon: Icons.folder_outlined,
+                label: _filterChipLabel(_categoryFilter, '分类'),
+                active: _categoryFilter.isNotEmpty,
+                onTap: _showCategorySheet,
+              ),
               const SizedBox(width: 8),
-
-              // 排序按钮
-              PopupMenuButton<SortField>(
-                icon: const Icon(Icons.sort),
-                tooltip: '排序方式',
-                initialValue: _sortField,
-                onSelected: (SortField value) {
-                  setState(() {
-                    _sortField = value;
-                  });
-                },
-                itemBuilder: (BuildContext context) =>
-                    <PopupMenuEntry<SortField>>[
-                      const PopupMenuItem<SortField>(
-                        value: SortField.addedOn,
-                        child: Text('添加时间'),
-                      ),
-                      const PopupMenuItem<SortField>(
-                        value: SortField.completionOn,
-                        child: Text('完成时间'),
-                      ),
-                      const PopupMenuItem<SortField>(
-                        value: SortField.dlSpeed,
-                        child: Text('下载速度'),
-                      ),
-                      const PopupMenuItem<SortField>(
-                        value: SortField.upSpeed,
-                        child: Text('上传速度'),
-                      ),
-                      const PopupMenuItem<SortField>(
-                        value: SortField.ratio,
-                        child: Text('分享率'),
-                      ),
-                      const PopupMenuItem<SortField>(
-                        value: SortField.size,
-                        child: Text('大小'),
-                      ),
-                      const PopupMenuItem<SortField>(
-                        value: SortField.progress,
-                        child: Text('进度'),
-                      ),
-                      const PopupMenuItem<SortField>(
-                        value: SortField.name,
-                        child: Text('名称'),
-                      ),
-                    ],
+              _buildQuickChip(
+                icon: Icons.label_outlined,
+                label: _filterChipLabel(_tagFilter, '标签'),
+                active: _tagFilter.isNotEmpty,
+                onTap: _showTagSheet,
               ),
-
-              // 排序方向
-              IconButton(
-                icon: Icon(
-                  _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-                ),
-                tooltip: _sortAscending ? '升序' : '降序',
-                onPressed: () {
-                  setState(() {
-                    _sortAscending = !_sortAscending;
-                  });
-                },
-              ),
-
-              // 过滤切换
-              IconButton(
-                icon: Icon(
-                  _showAllTasks ? Icons.filter_alt_off : Icons.filter_alt,
-                ),
-                tooltip: _showAllTasks ? '显示全部' : '仅显示活跃',
-                onPressed: () {
-                  setState(() {
-                    _showAllTasks = !_showAllTasks;
-                  });
-                },
+              const SizedBox(width: 8),
+              _buildQuickChip(
+                icon: _sortAscending
+                    ? Icons.arrow_upward
+                    : Icons.arrow_downward,
+                label: _sortField.label,
+                onTap: _showSortSheet,
               ),
             ],
           ),
@@ -1131,6 +1123,22 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
           .toList();
     }
 
+    // 筛选面板：仅展示多选中的分类（空集表示不限）
+    if (_categoryFilter.isNotEmpty) {
+      statusFilteredTasks = statusFilteredTasks
+          .where((task) => _categoryFilter.contains(task.category.trim()))
+          .toList();
+    }
+
+    // 标签维度：命中所选任一标签即保留
+    if (_tagFilter.isNotEmpty) {
+      statusFilteredTasks = statusFilteredTasks
+          .where(
+            (task) => task.tags.any((tag) => _tagFilter.contains(tag.trim())),
+          )
+          .toList();
+    }
+
     // 然后根据搜索关键词过滤任务名称
     final filteredTasks = _searchQuery.isEmpty
         ? statusFilteredTasks
@@ -1196,6 +1204,8 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
             Text(
               _searchQuery.isNotEmpty
                   ? '换个关键词试试'
+                  : _categoryFilter.isNotEmpty
+                  ? '试试放宽筛选面板里的分类'
                   : '下拉可刷新任务列表',
               style: TextStyle(
                 fontSize: 12,
@@ -1207,10 +1217,24 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
       );
     }
 
+    // 按分类分组（多于一个分类时才显示可折叠的分组头）
+    final groups = _groupByCategory
+        ? _buildCategoryGroups(filteredTasks)
+        : const <_TaskCategoryGroup>[];
+    final rows = <Object>[];
+    if (groups.length > 1) {
+      for (final group in groups) {
+        rows.add(group);
+        if (!_collapsedCategories.contains(group.key)) rows.addAll(group.tasks);
+      }
+    } else {
+      rows.addAll(filteredTasks);
+    }
+
     return RefreshIndicator(
       onRefresh: _loadTasks,
       child: ListView.builder(
-        itemCount: filteredTasks.length,
+        itemCount: rows.length,
         padding: const EdgeInsets.only(
           left: 16,
           top: 4,
@@ -1218,9 +1242,561 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
           bottom: 150,
         ),
         itemBuilder: (context, index) {
-          final task = filteredTasks[index];
-          return _buildTaskCard(task);
+          final row = rows[index];
+          if (row is _TaskCategoryGroup) {
+            return KeyedSubtree(
+              key: ValueKey('cat_group_${row.key}'),
+              child: _buildCategoryGroupHeader(row),
+            );
+          }
+          final task = row as DownloadTask;
+          return KeyedSubtree(
+            key: ValueKey('task_${task.hash}'),
+            child: _buildTaskCard(task),
+          );
         },
+      ),
+    );
+  }
+
+  int _compareCategoryKey(String a, String b) {
+    if (a.isEmpty) return 1;
+    if (b.isEmpty) return -1;
+    return a.toLowerCase().compareTo(b.toLowerCase());
+  }
+
+  List<_TaskCategoryGroup> _buildCategoryGroups(List<DownloadTask> tasks) {
+    final bucket = <String, List<DownloadTask>>{};
+    for (final task in tasks) {
+      final key = task.category.trim();
+      bucket.putIfAbsent(key, () => <DownloadTask>[]).add(task);
+    }
+    if (bucket.length <= 1) return const [];
+    final keys = bucket.keys.toList()..sort(_compareCategoryKey);
+    return [
+      for (final key in keys)
+        _TaskCategoryGroup(
+          key: key,
+          title: key.isEmpty ? '未分类' : key,
+          tasks: bucket[key]!,
+        ),
+    ];
+  }
+
+  // 当前任务列表里出现过的分类及其任务数（未分类 key 为空串）
+  Map<String, int> _categoryCounts() {
+    final counts = <String, int>{};
+    for (final task in _tasks) {
+      final key = task.category.trim();
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    final keys = counts.keys.toList()..sort(_compareCategoryKey);
+    return {for (final key in keys) key: counts[key]!};
+  }
+
+  void _toggleCategoryGroup(String key) {
+    setState(() {
+      if (!_collapsedCategories.remove(key)) _collapsedCategories.add(key);
+    });
+    StorageService.instance.saveDownloadTasksCollapsedCategories(
+      _collapsedCategories.toList(),
+    );
+  }
+
+  String _optionLabel(String key) => key.isEmpty ? '未分类' : key;
+
+  // 快捷按钮上的文案：只选了一个就直接显示它的名字
+  String _filterChipLabel(Set<String> picked, String noun) {
+    if (picked.isEmpty) return noun;
+    if (picked.length == 1) return _optionLabel(picked.first);
+    return '${picked.length} 个$noun';
+  }
+
+  Widget _buildQuickChip({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool active = false,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final foreground = active ? scheme.primary : scheme.onSurface;
+    return Expanded(
+      child: SizedBox(
+        height: 44,
+        child: Material(
+          color: active
+              ? scheme.primary.withValues(alpha: 0.12)
+              : scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, size: 18, color: foreground),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: foreground,
+                        fontWeight: active
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Map<String, int> _tagCounts() {
+    final counts = <String, int>{};
+    for (final task in _tasks) {
+      for (final raw in task.tags) {
+        final tag = raw.trim();
+        if (tag.isEmpty) continue;
+        counts[tag] = (counts[tag] ?? 0) + 1;
+      }
+    }
+    final keys = counts.keys.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return {for (final key in keys) key: counts[key]!};
+  }
+
+  void _applyCategoryFilter(Iterable<String> keys) {
+    setState(() {
+      _categoryFilter
+        ..clear()
+        ..addAll(keys);
+    });
+    StorageService.instance.saveDownloadTasksCategoryFilter(
+      _categoryFilter.toList(),
+    );
+  }
+
+  void _applyTagFilter(Iterable<String> keys) {
+    setState(() {
+      _tagFilter
+        ..clear()
+        ..addAll(keys);
+    });
+    StorageService.instance.saveDownloadTasksTagFilter(_tagFilter.toList());
+  }
+
+  void _showCategorySheet() => _showPickSheet(
+    title: '分类',
+    icon: Icons.folder_outlined,
+    searchHint: '搜索分类',
+    options: _categoryCounts(),
+    initial: _categoryFilter,
+    onApply: _applyCategoryFilter,
+  );
+
+  void _showTagSheet() => _showPickSheet(
+    title: '标签',
+    icon: Icons.label_outline,
+    searchHint: '搜索标签',
+    options: _tagCounts(),
+    initial: _tagFilter,
+    onApply: _applyTagFilter,
+  );
+
+  /// 搜索 + 多选 + 清除/应用 的草稿态面板，分类和标签共用一套。
+  Future<void> _showPickSheet({
+    required String title,
+    required IconData icon,
+    required String searchHint,
+    required Map<String, int> options,
+    required Set<String> initial,
+    required void Function(Iterable<String> keys) onApply,
+  }) async {
+    final allKeys = options.keys.toSet();
+    final draft = initial.isEmpty
+        ? allKeys.toSet()
+        : initial.where(allKeys.contains).toSet();
+    final searchController = TextEditingController();
+    var query = '';
+
+    final picked = await showModalBottomSheet<Set<String>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            final scheme = Theme.of(sheetContext).colorScheme;
+            final shown = query.isEmpty
+                ? options.entries.toList()
+                : options.entries
+                      .where(
+                        (e) => _optionLabel(e.key).toLowerCase().contains(
+                          query,
+                        ),
+                      )
+                      .toList();
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Material(
+                color: scheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(24),
+                clipBehavior: Clip.antiAlias,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(sheetContext).size.height * 0.82,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: scheme.primary.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(icon, color: scheme.primary),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              title,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                        child: SizedBox(
+                          height: 48,
+                          child: TextField(
+                            controller: searchController,
+                            style: const TextStyle(fontSize: 15),
+                            onChanged: (value) {
+                              query = value.trim().toLowerCase();
+                              setSheetState(() {});
+                            },
+                            decoration: InputDecoration(
+                              hintText: searchHint,
+                              hintStyle: TextStyle(color: scheme.outline),
+                              prefixIcon: Icon(
+                                Icons.search,
+                                size: 20,
+                                color: scheme.outline,
+                              ),
+                              filled: true,
+                              fillColor: scheme.surfaceContainerHighest,
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Flexible(
+                        child: shown.isEmpty
+                            ? Padding(
+                                padding: const EdgeInsets.only(bottom: 28),
+                                child: Center(
+                                  child: Text(
+                                    options.isEmpty
+                                        ? '暂无$title'
+                                        : '没有匹配的结果',
+                                    style: TextStyle(color: scheme.outline),
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                itemCount: shown.length,
+                                itemBuilder: (context, index) {
+                                  final entry = shown[index];
+                                  final selected = draft.contains(entry.key);
+                                  return Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      12,
+                                      0,
+                                      12,
+                                      6,
+                                    ),
+                                    child: Material(
+                                      color: selected
+                                          ? scheme.primary.withValues(
+                                              alpha: 0.12,
+                                            )
+                                          : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(14),
+                                      clipBehavior: Clip.antiAlias,
+                                      child: InkWell(
+                                        onTap: () {
+                                          setSheetState(() {
+                                            if (!draft.remove(entry.key)) {
+                                              draft.add(entry.key);
+                                            }
+                                          });
+                                        },
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 18,
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  _optionLabel(entry.key),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontSize: 17,
+                                                    color: selected
+                                                        ? scheme.primary
+                                                        : scheme.onSurface,
+                                                  ),
+                                                ),
+                                              ),
+                                              Icon(
+                                                selected
+                                                    ? Icons.check_circle
+                                                    : Icons
+                                                          .radio_button_unchecked,
+                                                size: 26,
+                                                color: selected
+                                                    ? scheme.primary
+                                                    : scheme.outline,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: SizedBox(
+                                height: 52,
+                                child: FilledButton(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor:
+                                        scheme.surfaceContainerHighest,
+                                    foregroundColor: scheme.onSurface,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                  ),
+                                  onPressed: () =>
+                                      Navigator.pop(sheetContext, <String>{}),
+                                  child: const Text(
+                                    '清除筛选',
+                                    style: TextStyle(fontSize: 16),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 2,
+                              child: SizedBox(
+                                height: 52,
+                                child: FilledButton(
+                                  style: FilledButton.styleFrom(
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                  ),
+                                  onPressed: () {
+                                    final coversAll =
+                                        allKeys.isEmpty ||
+                                        allKeys.every(draft.contains);
+                                    Navigator.pop(
+                                      sheetContext,
+                                      coversAll ? <String>{} : draft.toSet(),
+                                    );
+                                  },
+                                  child: const Text(
+                                    '应用',
+                                    style: TextStyle(fontSize: 16),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    searchController.dispose();
+    if (picked != null) onApply(picked);
+  }
+
+  void _showSortSheet() {
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            final scheme = Theme.of(sheetContext).colorScheme;
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    title: const Text(
+                      '排序',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    trailing: TextButton.icon(
+                      icon: Icon(
+                        _sortAscending
+                            ? Icons.arrow_upward
+                            : Icons.arrow_downward,
+                        size: 18,
+                      ),
+                      label: Text(_sortAscending ? '升序' : '降序'),
+                      onPressed: () {
+                        setState(() => _sortAscending = !_sortAscending);
+                        setSheetState(() {});
+                      },
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        for (final field in SortField.values)
+                          ListTile(
+                            leading: Icon(
+                              _sortField == field
+                                  ? Icons.radio_button_checked
+                                  : Icons.radio_button_off,
+                              color: _sortField == field
+                                  ? scheme.primary
+                                  : null,
+                            ),
+                            title: Text(field.label),
+                            onTap: () {
+                              setState(() => _sortField = field);
+                              Navigator.pop(sheetContext);
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildCategoryGroupHeader(_TaskCategoryGroup group) {
+    final collapsed = _collapsedCategories.contains(group.key);
+    var dl = 0;
+    var up = 0;
+    for (final task in group.tasks) {
+      dl += task.dlspeed;
+      up += task.upspeed;
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, bottom: 2),
+      child: Material(
+        color: Theme.of(context).colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => _toggleCategoryGroup(group.key),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                Icon(
+                  collapsed ? Icons.folder_outlined : Icons.folder_open,
+                  size: 18,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    group.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Text(
+                  '${group.tasks.length}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                if (dl > 0) ...[
+                  const Icon(Icons.arrow_downward, size: 12),
+                  Text(
+                    FormatUtil.formatSpeed(dl),
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                if (up > 0) ...[
+                  const Icon(Icons.arrow_upward, size: 12),
+                  Text(
+                    FormatUtil.formatSpeed(up),
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Icon(
+                  collapsed ? Icons.expand_more : Icons.expand_less,
+                  size: 18,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1740,4 +2316,17 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
       ),
     );
   }
+}
+
+/// 任务列表按分类折叠用的分组
+class _TaskCategoryGroup {
+  const _TaskCategoryGroup({
+    required this.key,
+    required this.title,
+    required this.tasks,
+  });
+
+  final String key;
+  final String title;
+  final List<DownloadTask> tasks;
 }

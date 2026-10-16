@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'dart:ui';
+
 import 'package:html/dom.dart' as dom;
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +10,7 @@ import 'package:flutter_bbcode/flutter_bbcode.dart';
 import 'package:bbob_dart/bbob_dart.dart' as bbob;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
+
 import '../utils/url_launcher_helper.dart';
 import '../services/api/api_service.dart';
 import '../services/storage/storage_service.dart';
@@ -19,7 +22,9 @@ import '../services/local_download_service.dart';
 import '../widgets/torrent_download_dialog.dart';
 import '../widgets/cached_network_image.dart';
 import '../widgets/full_screen_image_viewer.dart';
+
 import 'package:pt_mate/utils/notification_helper.dart';
+
 import '../utils/screen_utils.dart';
 
 // 自定义Quote标签处理器
@@ -72,9 +77,8 @@ class CustomQuoteDisplay extends StatelessWidget {
           width: 1,
         ),
         borderRadius: BorderRadius.circular(8),
-        color: Theme.of(
-          context,
-        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest
+            .withValues(alpha: 0.3),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -84,18 +88,16 @@ class CustomQuoteDisplay extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: Theme.of(
-                context,
-              ).colorScheme.primary.withValues(alpha: 0.1),
+              color: Theme.of(context).colorScheme.primary
+                  .withValues(alpha: 0.1),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(7),
                 topRight: Radius.circular(7),
               ),
               border: Border(
                 bottom: BorderSide(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.outline.withValues(alpha: 0.3),
+                  color: Theme.of(context).colorScheme.outline
+                      .withValues(alpha: 0.3),
                   width: 0.5,
                 ),
               ),
@@ -264,9 +266,8 @@ class _CustomHideDisplayState extends State<CustomHideDisplay> {
                     filter: ImageFilter.blur(sigmaX: 3.0, sigmaY: 3.0),
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surface.withValues(alpha: 0.7),
+                        color: Theme.of(context).colorScheme.surface
+                            .withValues(alpha: 0.7),
                         borderRadius: BorderRadius.circular(5),
                       ),
                       child: Center(
@@ -277,18 +278,16 @@ class _CustomHideDisplayState extends State<CustomHideDisplay> {
                             Icon(
                               Icons.visibility,
                               size: 16,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withValues(alpha: 0.7),
+                              color: Theme.of(context).colorScheme.onSurface
+                                  .withValues(alpha: 0.7),
                             ),
                             const SizedBox(width: 4),
                             Text(
                               '点击显示隐藏内容',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withValues(alpha: 0.7),
+                                color: Theme.of(context).colorScheme.onSurface
+                                    .withValues(alpha: 0.7),
                               ),
                             ),
                           ],
@@ -463,6 +462,7 @@ class _TorrentDetailPageState extends State<TorrentDetailPage> {
   // 优雅关闭 WebView，避免页面退出或跳转时出现崩溃
   Future<void> _disposeWebView() async {
     final controller = _webViewController;
+    _webViewController = null;
     if (controller == null) return;
     try {
       await controller.stopLoading();
@@ -472,7 +472,6 @@ class _TorrentDetailPageState extends State<TorrentDetailPage> {
         urlRequest: URLRequest(url: WebUri('about:blank')),
       );
     } catch (_) {}
-    _webViewController = null;
   }
 
   @override
@@ -822,6 +821,7 @@ class _TorrentDetailPageState extends State<TorrentDetailPage> {
       await ApiService.instance.toggleCollection(
         id: widget.torrentItem.id,
         make: newCollectionState,
+        siteConfig: widget.siteConfig,
       );
     } catch (e) {
       // 请求失败，恢复原状态 - 恢复收藏状态变量和torrentItem对象
@@ -1669,14 +1669,12 @@ class _TorrentDetailPageState extends State<TorrentDetailPage> {
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Theme.of(
-                  context,
-                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                color: Theme.of(context).colorScheme.surfaceContainerHighest
+                    .withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.outline.withValues(alpha: 0.3),
+                  color: Theme.of(context).colorScheme.outline
+                      .withValues(alpha: 0.3),
                   width: 1,
                 ),
               ),
@@ -1787,12 +1785,56 @@ class _TorrentDetailPageState extends State<TorrentDetailPage> {
     );
   }
 
+  /// [移植适配-OHOS] 一键复制详情页链接到剪贴板。
+  ///
+  /// 鸿蒙上 HtmlWidget 渲染的正文链接点击不触发 onTapUrl，
+  /// 因此在标题栏提供复制入口，直接复制详情页 URL。
+  Future<void> _copyDetailLink() async {
+    final url = _detail?.webviewUrl ?? widget.torrentItem.detailUrl ?? '';
+    if (url.isEmpty) {
+      NotificationHelper.showInfo(context, '暂无可用链接');
+      return;
+    }
+    debugPrint('PTM-DEBUG copyDetail: $url');
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await Clipboard.setData(ClipboardData(text: url));
+      debugPrint('PTM-DEBUG clipboard ok');
+    } catch (e) {
+      debugPrint('PTM-DEBUG 复制链接失败：$e');
+    }
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('链接已复制'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+  }
+
   Widget buildHtmlContent(String html) {
     return HtmlWidget(
       html,
       customWidgetBuilder: _buildHtmlImage,
       onTapUrl: (url) {
-        UrlLauncherHelper.launchBrowser(context, url);
+        // [移植适配-OHOS] 鸿蒙无法打开外部浏览器（launchBrowser 会失败），
+        // 因此点击正文中的链接直接复制链接地址到剪贴板。
+        debugPrint('PTM-DEBUG onTapUrl: $url');
+        try {
+          Clipboard.setData(ClipboardData(text: url));
+          debugPrint('PTM-DEBUG clipboard ok');
+        } catch (e) {
+          debugPrint('PTM-DEBUG 复制链接失败：$e');
+        }
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text('链接已复制'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
         return true;
       },
       customStylesBuilder: (element) {
@@ -1816,9 +1858,8 @@ class _TorrentDetailPageState extends State<TorrentDetailPage> {
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: Theme.of(
-                context,
-              ).colorScheme.outline.withValues(alpha: 0.3),
+              color: Theme.of(context).colorScheme.outline
+                  .withValues(alpha: 0.3),
             ),
           ),
           child: Column(
@@ -1833,17 +1874,34 @@ class _TorrentDetailPageState extends State<TorrentDetailPage> {
               Text('种子详情页面', style: Theme.of(context).textTheme.headlineSmall),
               const SizedBox(height: 8),
               Text(
-                '在当前平台上，请使用系统浏览器查看详细内容',
+                '当前平台无法唤起系统浏览器，请复制链接地址',
                 style: Theme.of(context).textTheme.bodyMedium,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
               FilledButton.icon(
                 onPressed: () async {
-                  await UrlLauncherHelper.launchBrowser(context, webviewUrl);
+                  // [移植适配-OHOS] 鸿蒙无法唤起外部浏览器（launchBrowser 失败），
+                  // 改为点击直接复制详情页链接到剪贴板。
+                  debugPrint('PTM-DEBUG copyBtn: $webviewUrl');
+                  final messenger = ScaffoldMessenger.of(context);
+                  try {
+                    await Clipboard.setData(ClipboardData(text: webviewUrl));
+                    debugPrint('PTM-DEBUG clipboard ok');
+                  } catch (e) {
+                    debugPrint('PTM-DEBUG 复制链接失败：$e');
+                  }
+                  messenger
+                    ..hideCurrentSnackBar()
+                    ..showSnackBar(
+                      SnackBar(
+                        content: Text('链接已复制'),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
                 },
-                icon: const Icon(Icons.launch),
-                label: const Text('在浏览器中打开'),
+                icon: const Icon(Icons.copy),
+                label: const Text('复制链接'),
               ),
             ],
           ),
@@ -1933,9 +1991,8 @@ class _TorrentDetailPageState extends State<TorrentDetailPage> {
             margin: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               border: Border.all(
-                color: Theme.of(
-                  context,
-                ).colorScheme.outline.withValues(alpha: 0.3),
+                color: Theme.of(context).colorScheme.outline
+                    .withValues(alpha: 0.3),
               ),
               borderRadius: BorderRadius.circular(8),
             ),
@@ -1964,7 +2021,9 @@ class _TorrentDetailPageState extends State<TorrentDetailPage> {
                       Theme.of(context).brightness == Brightness.dark,
                 ),
                 onWebViewCreated: (controller) async {
+                  if (!mounted) return;
                   _webViewController = controller;
+
                   if (widget.siteConfig?.cookie != null &&
                       widget.siteConfig!.cookie!.isNotEmpty) {
                     final cookieManager = CookieManager.instance();
@@ -1986,12 +2045,14 @@ class _TorrentDetailPageState extends State<TorrentDetailPage> {
                   }
                 },
                 onLoadStart: (controller, url) {
+                  if (!mounted) return;
                   setState(() {
                     _webViewLoading = true;
                     _webViewError = null;
                   });
                 },
                 onLoadStop: (controller, url) {
+                  if (!mounted) return;
                   setState(() {
                     _webViewLoading = false;
                   });
@@ -2000,6 +2061,7 @@ class _TorrentDetailPageState extends State<TorrentDetailPage> {
                   // 可以在这里显示加载进度
                 },
                 onReceivedError: (controller, request, error) {
+                  if (!mounted) return;
                   debugPrint(
                     'WebView错误: ${error.description}, URL: ${request.url}, isForMainFrame: ${request.isForMainFrame}',
                   );
@@ -2081,9 +2143,9 @@ class _TorrentDetailPageState extends State<TorrentDetailPage> {
                 children: [
                   CircleAvatar(
                     radius: 16,
-                    backgroundColor: Theme.of(
-                      context,
-                    ).colorScheme.primaryContainer,
+                    backgroundColor: Theme.of(context)
+                        .colorScheme
+                        .primaryContainer,
                     child: Text(
                       comment.author.isNotEmpty
                           ? comment.author[0].toUpperCase()
@@ -2104,14 +2166,13 @@ class _TorrentDetailPageState extends State<TorrentDetailPage> {
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         Text(
-                          DateFormat(
-                            'yyyy-MM-dd HH:mm',
-                          ).format(comment.createdDate),
+                          DateFormat('yyyy-MM-dd HH:mm')
+                              .format(comment.createdDate),
                           style: TextStyle(
                             fontSize: 12,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -2167,7 +2228,8 @@ class _TorrentDetailPageState extends State<TorrentDetailPage> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: false,
+      // iOS 原生侧滑需要允许路由直接退出；其他平台保留网页历史返回。
+      canPop: Theme.of(context).platform == TargetPlatform.iOS,
       onPopInvokedWithResult: (bool didPop, dynamic result) async {
         if (didPop) return;
 
@@ -2215,6 +2277,14 @@ class _TorrentDetailPageState extends State<TorrentDetailPage> {
           toolbarHeight: ScreenUtils.isLargeScreen(context)
               ? kToolbarHeight
               : 72,
+          actions: [
+            // [移植适配-OHOS] 一键复制详情页链接（不依赖 HtmlWidget 链接点击）
+            IconButton(
+              icon: const Icon(Icons.link),
+              tooltip: '复制链接',
+              onPressed: _copyDetailLink,
+            ),
+          ],
         ),
         body: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -2358,6 +2428,13 @@ class _TorrentDetailPageState extends State<TorrentDetailPage> {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
+                                    actions: [
+                                      IconButton(
+                                        icon: const Icon(Icons.link),
+                                        tooltip: '复制链接',
+                                        onPressed: _copyDetailLink,
+                                      ),
+                                    ],
                                   ),
                                   body: buildWebViewContent(
                                     _detail!.webviewUrl!,
@@ -2383,6 +2460,13 @@ class _TorrentDetailPageState extends State<TorrentDetailPage> {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
+                                    actions: [
+                                      IconButton(
+                                        icon: const Icon(Icons.link),
+                                        tooltip: '复制链接',
+                                        onPressed: _copyDetailLink,
+                                      ),
+                                    ],
                                   ),
                                   body: buildWebViewContent(
                                     _detail!.webviewUrl!,

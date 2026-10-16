@@ -4,11 +4,10 @@ import 'package:provider/provider.dart';
 import '../services/storage/storage_service.dart';
 import '../services/theme/theme_manager.dart';
 import '../services/downloader/downloader_config.dart';
-import '../services/downloader/downloader_service.dart';
 import '../utils/notification_helper.dart';
 import 'download_health_page.dart';
+import 'qb_server_settings_page.dart';
 import 'speed_scheduler_page.dart';
-import 'rss_auto_download_page.dart';
 
 /// qB 客户端风格的下载管理设置页
 /// 板块化布局：外观 / 高级，与 qBittorrent 客户端设置页一致
@@ -22,14 +21,11 @@ class QbSettingsPage extends StatefulWidget {
 class _QbSettingsPageState extends State<QbSettingsPage> {
   int _refreshInterval = 5; // 秒
   bool _showAllTasks = false;
+  bool _groupByCategory = true;
   bool _loading = true;
 
-  // 分类管理
+  // 服务器设置入口需要判断当前下载器是否为 qBittorrent
   DownloaderConfig? _config;
-  String? _password;
-  List<String> _categories = [];
-  bool _catsLoading = false;
-  String? _catsError;
 
   @override
   void initState() {
@@ -48,133 +44,12 @@ class _QbSettingsPageState extends State<QbSettingsPage> {
         orElse: () =>
             configs.isNotEmpty ? configs.first : throw Exception('未找到默认下载器'),
       );
-      final config = DownloaderConfig.fromJson(configMap);
-      final pwd = await StorageService.instance.loadDownloaderPassword(
-        config.id,
-      );
       if (!mounted) return;
       setState(() {
-        _config = config;
-        _password = pwd;
+        _config = DownloaderConfig.fromJson(configMap);
       });
-      await _loadCategories();
     } catch (_) {
-      // 无下载器配置时不显示分类板块错误
-    }
-  }
-
-  Future<void> _loadCategories() async {
-    final config = _config;
-    final pwd = _password;
-    if (config == null || (pwd ?? '').isEmpty) return;
-    setState(() {
-      _catsLoading = true;
-      _catsError = null;
-    });
-    try {
-      final cats = await DownloaderService.instance.getCategories(
-        config: config,
-        password: pwd!,
-      );
-      if (!mounted) return;
-      setState(() {
-        _categories = cats;
-        _catsLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _catsError = '加载分类失败：$e';
-        _catsLoading = false;
-      });
-    }
-  }
-
-  Future<void> _addCategory() async {
-    final config = _config;
-    final pwd = _password;
-    if (config == null || (pwd ?? '').isEmpty) {
-      NotificationHelper.showError(context, '未配置下载器');
-      return;
-    }
-    final result = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) {
-        final ctrl = TextEditingController();
-        return AlertDialog(
-          title: const Text('新增分类'),
-          content: TextField(
-            controller: ctrl,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: '分类名称',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () =>
-                  Navigator.pop(dialogContext, ctrl.text.trim()),
-              child: const Text('创建'),
-            ),
-          ],
-        );
-      },
-    );
-    if (result == null || result.isEmpty) return;
-    try {
-      await DownloaderService.instance.createCategory(
-        config: config,
-        password: pwd!,
-        category: result,
-      );
-      if (!mounted) return;
-      NotificationHelper.showInfo(context, '分类已创建');
-      await _loadCategories();
-    } catch (e) {
-      if (!mounted) return;
-      NotificationHelper.showError(context, '创建失败：$e');
-    }
-  }
-
-  Future<void> _deleteCategory(String category) async {
-    final config = _config;
-    final pwd = _password;
-    if (config == null || (pwd ?? '').isEmpty) return;
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('删除分类'),
-        content: Text('确定删除分类"$category"吗？（不会删除已归类任务的文件）'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-    try {
-      await DownloaderService.instance.deleteCategory(
-        config: config,
-        password: pwd!,
-        category: category,
-      );
-      if (!mounted) return;
-      NotificationHelper.showInfo(context, '分类已删除');
-      await _loadCategories();
-    } catch (e) {
-      if (!mounted) return;
-      NotificationHelper.showError(context, '删除失败：$e');
+      // 无下载器配置时服务器设置入口置灰
     }
   }
 
@@ -182,10 +57,13 @@ class _QbSettingsPageState extends State<QbSettingsPage> {
     final interval = await StorageService.instance
         .loadDownloadTasksRefreshInterval();
     final showAll = await StorageService.instance.loadDownloadTasksShowAll();
+    final groupByCategory = await StorageService.instance
+        .loadDownloadTasksGroupByCategory();
     if (!mounted) return;
     setState(() {
       _refreshInterval = interval;
       _showAllTasks = showAll;
+      _groupByCategory = groupByCategory;
       _loading = false;
     });
   }
@@ -205,6 +83,13 @@ class _QbSettingsPageState extends State<QbSettingsPage> {
       _showAllTasks = value;
     });
     await StorageService.instance.saveDownloadTasksShowAll(value);
+  }
+
+  Future<void> _saveGroupByCategory(bool value) async {
+    setState(() {
+      _groupByCategory = value;
+    });
+    await StorageService.instance.saveDownloadTasksGroupByCategory(value);
   }
 
   String _getThemeModeText(AppThemeMode mode) {
@@ -311,96 +196,8 @@ class _QbSettingsPageState extends State<QbSettingsPage> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                _sectionHeader(context, '分类'),
-                Card(
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.outlineVariant.withValues(alpha: 0.4),
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      if (_catsLoading)
-                        const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Center(
-                            child: SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                              ),
-                            ),
-                          ),
-                        )
-                      else if (_catsError != null)
-                        Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            children: [
-                              Text(
-                                _catsError!,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.red,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                              const SizedBox(height: 8),
-                              OutlinedButton.icon(
-                                onPressed: _loadCategories,
-                                icon: const Icon(Icons.refresh, size: 18),
-                                label: const Text('重试'),
-                              ),
-                            ],
-                          ),
-                        )
-                      else if (_config == null ||
-                          (_password ?? '').isEmpty)
-                        const ListTile(
-                          leading: Icon(Icons.info_outline),
-                          title: Text('未配置下载器'),
-                          subtitle: Text('在下载器设置中添加后即可管理分类'),
-                        )
-                      else if (_categories.isEmpty)
-                        ListTile(
-                          leading: const Icon(Icons.folder_open),
-                          title: const Text('暂无分类'),
-                          subtitle: const Text('点击下方按钮新增'),
-                        )
-                      else
-                        ..._categories.map(
-                          (c) => ListTile(
-                            dense: true,
-                            leading: const Icon(Icons.folder_outlined),
-                            title: Text(c),
-                            trailing: IconButton(
-                              tooltip: '删除分类',
-                              icon: const Icon(
-                                Icons.delete_outline,
-                                size: 20,
-                                color: Colors.red,
-                              ),
-                              onPressed: () => _deleteCategory(c),
-                            ),
-                          ),
-                        ),
-                      const Divider(height: 1, indent: 16),
-                      ListTile(
-                        leading: const Icon(Icons.add),
-                        title: const Text('新增分类'),
-                        textColor: Theme.of(context).colorScheme.primary,
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: _addCategory,
-                      ),
-                    ],
-                  ),
-                ),
+                _sectionHeader(context, '服务器设置'),
+                _serverSettingsCard(context),
                 const SizedBox(height: 16),
                 _sectionHeader(context, '任务工具'),
                 Card(
@@ -439,20 +236,6 @@ class _QbSettingsPageState extends State<QbSettingsPage> {
                           Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) => const SpeedSchedulerPage(),
-                            ),
-                          );
-                        },
-                      ),
-                      const Divider(height: 1, indent: 56),
-                      ListTile(
-                        leading: const Icon(Icons.rss_feed),
-                        title: const Text('RSS 自动下载'),
-                        subtitle: const Text('按 RSS 规则自动下载新种子'),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const RssAutoDownloadPage(),
                             ),
                           );
                         },
@@ -501,11 +284,51 @@ class _QbSettingsPageState extends State<QbSettingsPage> {
                         value: _showAllTasks,
                         onChanged: _saveShowAll,
                       ),
+                      const Divider(height: 1, indent: 56),
+                      SwitchListTile(
+                        secondary: const Icon(Icons.folder_outlined),
+                        title: const Text('按分类分组'),
+                        subtitle: const Text('同分类折叠成一组，点击组头展开收起'),
+                        value: _groupByCategory,
+                        onChanged: _saveGroupByCategory,
+                      ),
                     ],
                   ),
                 ),
               ],
             ),
+    );
+  }
+
+  Widget _serverSettingsCard(BuildContext context) {
+    final isQb = _config is QbittorrentConfig;
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: Theme.of(
+            context,
+          ).colorScheme.outlineVariant.withValues(alpha: 0.4),
+        ),
+      ),
+      child: ListTile(
+        leading: const Icon(Icons.dns_outlined),
+        title: const Text('qBittorrent 选项'),
+        subtitle: Text(
+          isQb
+              ? '下载、连接、速度、BitTorrent、RSS、分类与标签'
+              : '需要 qBittorrent 下载器',
+        ),
+        enabled: isQb,
+        trailing: const Icon(Icons.chevron_right),
+        onTap: isQb
+            ? () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const QbServerSettingsPage()),
+              )
+            : null,
+      ),
     );
   }
 

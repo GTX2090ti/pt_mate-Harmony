@@ -501,6 +501,21 @@ class QbittorrentClient
     return data.keys.toList();
   }
 
+  /// 获取分类明细（名称 -> 保存路径），来自 GET /torrents/categories
+  Future<Map<String, String>> getCategoryDetails() async {
+    final response = await _request('GET', '/torrents/categories');
+    final data = response.data;
+    if (data is! Map<String, dynamic>) return const {};
+    final result = <String, String>{};
+    data.forEach((name, value) {
+      final savePath = value is Map<String, dynamic>
+          ? (value['savePath'] as String? ?? '')
+          : '';
+      result[name] = savePath;
+    });
+    return result;
+  }
+
   @override
   Future<List<String>> getTags() async {
     final response = await _request('GET', '/torrents/tags');
@@ -804,7 +819,7 @@ class QbittorrentClient
   Future<void> addTags(List<String> hashes, List<String> tags) async {
     await _request('POST', '/torrents/addTags', body: {
       'hashes': hashes.join('|'),
-      'tags': tags.join(','),
+      'tags': tags.join('|'),
     });
   }
 
@@ -812,7 +827,23 @@ class QbittorrentClient
   Future<void> removeTags(List<String> hashes, List<String> tags) async {
     await _request('POST', '/torrents/removeTags', body: {
       'hashes': hashes.join('|'),
-      'tags': tags.join(','),
+      'tags': tags.join('|'),
+    });
+  }
+
+  /// 新建标签（可一次多个）
+  Future<void> createTags(List<String> tags) async {
+    if (tags.isEmpty) return;
+    await _request('POST', '/torrents/createTags', body: {
+      'tags': tags.join('|'),
+    });
+  }
+
+  /// 删除标签（不影响种子本身）
+  Future<void> deleteTags(List<String> tags) async {
+    if (tags.isEmpty) return;
+    await _request('POST', '/torrents/deleteTags', body: {
+      'tags': tags.join('|'),
     });
   }
 
@@ -847,11 +878,15 @@ class QbittorrentClient
     });
   }
 
-  /// 重命名分类
-  Future<void> renameCategory(String oldName, String newName) async {
+  /// 修改分类的保存路径。savePath 为空串表示恢复使用默认保存路径。
+  ///
+  /// qBittorrent 的 WebAPI 从未支持重命名分类（`editCategory` 只接受
+  /// `category` + `savePath`，4.6/5.0 还强制要求 `savePath`），
+  /// 因此这里只做保存路径的修改。
+  Future<void> setCategorySavePath(String category, String savePath) async {
     await _request('POST', '/torrents/editCategory', body: {
-      'category': oldName,
-      'name': newName,
+      'category': category,
+      'savePath': savePath,
     });
   }
 
@@ -920,6 +955,21 @@ class QbittorrentClient
     final response = await _request('GET', '/app/preferences');
     final data = response.data as Map<String, dynamic>;
     return GlobalPreferences.fromJson(data);
+  }
+
+  /// 获取原始偏好（键为 qB 的 dottree 路径，如 `dl_limit`、`queueing`）
+  Future<Map<String, dynamic>> getPreferencesRaw() async {
+    final response = await _request('GET', '/app/preferences');
+    final data = response.data;
+    return data is Map<String, dynamic> ? data : const {};
+  }
+
+  /// 写入偏好。qB 的 setPreferences 接收增量 JSON，未出现的键保持原值
+  Future<void> setPreferences(Map<String, dynamic> deltas) async {
+    if (deltas.isEmpty) return;
+    await _request('POST', '/app/setPreferences', body: {
+      'json': jsonEncode(deltas),
+    });
   }
 
   /// 设置全局下载限速（KiB/s，-1 表示不限速）

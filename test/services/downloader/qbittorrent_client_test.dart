@@ -8,11 +8,14 @@ import 'package:pt_mate/services/downloader/downloader_models.dart';
 import 'package:pt_mate/services/downloader/qbittorrent_client.dart';
 
 class _RecordedRequest {
-  _RecordedRequest(this.method, this.path, this.headers);
+  _RecordedRequest(this.method, this.path, this.headers, this.data);
 
   final String method;
   final String path;
   final Map<String, dynamic> headers;
+  final Object? data;
+
+  Map<dynamic, dynamic> get form => data as Map<dynamic, dynamic>;
 }
 
 class _FakeHttpClientAdapter implements HttpClientAdapter {
@@ -32,6 +35,7 @@ class _FakeHttpClientAdapter implements HttpClientAdapter {
         options.method,
         options.path,
         Map<String, dynamic>.from(options.headers),
+        options.data,
       ),
     );
 
@@ -68,6 +72,31 @@ class _FakeHttpClientAdapter implements HttpClientAdapter {
           Headers.contentTypeHeader: [Headers.jsonContentType],
         },
       );
+    }
+
+    if (options.path.endsWith('/app/preferences')) {
+      return ResponseBody.fromString(
+        jsonEncode({
+          'save_path': '/downloads',
+          'listen_port': 8999,
+          'dl_limit': -1,
+          'max_ratio': 2.5,
+          'queueing': true,
+          'add_trackers': ['http://tracker-1/announce'],
+        }),
+        200,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      );
+    }
+
+    if (options.path.endsWith('/app/setPreferences') ||
+        options.path.endsWith('/torrents/createTags') ||
+        options.path.endsWith('/torrents/deleteTags') ||
+        options.path.endsWith('/torrents/createCategory') ||
+        options.path.endsWith('/torrents/editCategory')) {
+      return ResponseBody.fromString('', 204);
     }
 
     throw UnsupportedError(
@@ -166,6 +195,88 @@ void main() {
       expect(adapter.requests.length, 4);
       expect(adapter.requests[1].headers['Cookie'], 'cookie_id=first-value');
       expect(adapter.requests[3].headers['Cookie'], 'cookie_id=second-value');
+    });
+    test('reads raw preferences from /app/preferences', () async {
+      final adapter = _FakeHttpClientAdapter()
+        ..loginCookies.add('cookie_id=prefs; HttpOnly; path=/');
+      final dio = Dio()..httpClientAdapter = adapter;
+      final client = QbittorrentClient(
+        config: buildConfig(),
+        password: 'secret',
+        dio: dio,
+      );
+
+      final prefs = await client.getPreferencesRaw();
+
+      expect(prefs['save_path'], '/downloads');
+      expect(prefs['listen_port'], 8999);
+      expect(prefs['add_trackers'], ['http://tracker-1/announce']);
+      expect(adapter.requests[1].path, 'http://localhost:8080/api/v2/app/preferences');
+    });
+
+    test('writes preference deltas as encoded json form field', () async {
+      final adapter = _FakeHttpClientAdapter()
+        ..loginCookies.add('cookie_id=prefs; HttpOnly; path=/');
+      final dio = Dio()..httpClientAdapter = adapter;
+      final client = QbittorrentClient(
+        config: buildConfig(),
+        password: 'secret',
+        dio: dio,
+      );
+
+      await client.setPreferences({'dl_limit': 1048576, 'queueing': false});
+
+      final request = adapter.requests.last;
+      expect(request.method, 'POST');
+      expect(request.path, endsWith('/api/v2/app/setPreferences'));
+      expect(request.form['json'], '{"dl_limit":1048576,"queueing":false}');
+
+      final countBefore = adapter.requests.length;
+      await client.setPreferences({});
+      expect(adapter.requests.length, countBefore);
+    });
+
+    test('creates and deletes tags with pipe-separated names', () async {
+      final adapter = _FakeHttpClientAdapter()
+        ..loginCookies.add('cookie_id=prefs; HttpOnly; path=/');
+      final dio = Dio()..httpClientAdapter = adapter;
+      final client = QbittorrentClient(
+        config: buildConfig(),
+        password: 'secret',
+        dio: dio,
+      );
+
+      await client.createTags(['pt', 'hd']);
+      expect(adapter.requests.last.path, endsWith('/torrents/createTags'));
+      expect(adapter.requests.last.form['tags'], 'pt|hd');
+
+      await client.deleteTags(['pt']);
+      expect(adapter.requests.last.path, endsWith('/torrents/deleteTags'));
+      expect(adapter.requests.last.form['tags'], 'pt');
+    });
+
+    test('edits category save path with the params qBittorrent requires',
+        () async {
+      final adapter = _FakeHttpClientAdapter()
+        ..loginCookies.add('cookie_id=prefs; HttpOnly; path=/');
+      final dio = Dio()..httpClientAdapter = adapter;
+      final client = QbittorrentClient(
+        config: buildConfig(),
+        password: 'secret',
+        dio: dio,
+      );
+
+      await client.createCategory('tv', savePath: '/data/tv');
+      expect(adapter.requests.last.path, endsWith('/torrents/createCategory'));
+      expect(adapter.requests.last.form['category'], 'tv');
+      expect(adapter.requests.last.form['savePath'], '/data/tv');
+
+      // 4.6/5.0 的 editCategory 强制要求 savePath，清空路径也要把空串发出去
+      await client.setCategorySavePath('tv', '');
+      expect(adapter.requests.last.path, endsWith('/torrents/editCategory'));
+      expect(adapter.requests.last.form['category'], 'tv');
+      expect(adapter.requests.last.form.containsKey('savePath'), isTrue);
+      expect(adapter.requests.last.form['savePath'], '');
     });
   });
 }
