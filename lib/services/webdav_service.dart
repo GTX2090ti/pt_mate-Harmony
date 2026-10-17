@@ -36,6 +36,21 @@ class WebDAVService {
     _currentConfig = null;
   }
 
+  /// [移植适配-OHOS] 容错读取以 JSON 文本存放的偏好。
+  ///
+  /// `SharedPreferences.getString()` 是裸强转（`_preferenceCache[key] as String?`），
+  /// 而鸿蒙侧 shared_preferences 曾把内容形如 JSON 数组的值回传成 List，
+  /// 于是备份链路读 `webdav_config_history` 时抛
+  /// `type 'List<Object?>' is not a subtype of type 'String?'`，
+  /// 用户侧表现为一按「导出备份」就失败。改走无强转的 `get()`，
+  /// 两种形态统一归一成 JSON 字符串。
+  static String? _readJsonPreference(SharedPreferences prefs, String key) {
+    final raw = prefs.get(key);
+    if (raw is String) return raw;
+    if (raw is List) return jsonEncode(raw.map((item) => '$item').toList());
+    return null;
+  }
+
   // 配置管理
   Future<void> saveConfig(WebDAVConfig config, {String? password}) async {
     // 敏感值必须先写入并读回；失败时不能留下新的普通配置。
@@ -58,7 +73,7 @@ class WebDAVService {
     if (_currentConfig != null) return _currentConfig;
 
     final prefs = await SharedPreferences.getInstance();
-    final configStr = prefs.getString(_configKey);
+    final configStr = _readJsonPreference(prefs, _configKey);
     if (configStr == null) return null;
 
     try {
@@ -72,7 +87,7 @@ class WebDAVService {
 
   Future<List<WebDAVConfig>> loadConfigHistory() async {
     final prefs = await SharedPreferences.getInstance();
-    final historyStr = prefs.getString('${_configKey}_history');
+    final historyStr = _readJsonPreference(prefs, '${_configKey}_history');
     if (historyStr == null) return [];
 
     try {

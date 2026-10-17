@@ -25,6 +25,13 @@ const TAG = 'SharedPreferencesOhos';
 const CHANNEL_NAME = 'plugins.flutter.io/shared_preferences';
 const PREFIX = 'flutter.';
 const STORE_NAME = 'ptmate_prefs';
+/**
+ * 降级存储的字符串列表前缀。
+ *
+ * 见 setStringList：只有「原生数组写入被设备拒绝」时才会走 JSON 文本分支，
+ * 加上这个前缀让 getAll 能无歧义地认出它是列表，不必再靠内容猜测。
+ */
+const LIST_TEXT_PREFIX = '\u0001';
 
 export default class SharedPreferencesOhos implements FlutterPlugin {
   private channel: MethodChannel | null = null;
@@ -136,14 +143,24 @@ export default class SharedPreferencesOhos implements FlutterPlugin {
           }
         }
         const listKey = PREFIX + this.strArg(call, 'key');
+        let storedAsArray = false;
         try {
           // preferences 原生支持 Array<string>，以数组形态写入，getAll 才能
           // 原样返回数组（见 restoreStringList）。
           store.putSync(listKey, arr);
+          // 必须回读确认它真的是数组：putSync 在部分版本上不抛异常却静默把
+          // 数组降级成字符串，那样 getAll 回来的就是字符串，Dart 侧
+          // getStringList() 会反向崩溃。
+          storedAsArray = store.getSync(listKey, '') instanceof Array;
         } catch (e) {
-          // 少数设备/版本不接受数组值，降级为 JSON 文本；读取时由
-          // restoreStringList 还原，对 Dart 侧表现一致。
-          store.putSync(listKey, JSON.stringify(arr));
+          storedAsArray = false;
+        }
+        if (!storedAsArray) {
+          // 设备不接受数组值，降级为带标记前缀的 JSON 文本；
+          // 读取时由 restoreStringList 还原，对 Dart 侧表现一致。
+          // 加前缀而不是直接存 JSON，是为了和「业务自己 setString 的 JSON 集合」
+          // 区分开——后者必须原样以字符串回传，否则 Dart 的 getString 会强转崩溃。
+          store.putSync(listKey, LIST_TEXT_PREFIX + JSON.stringify(arr));
         }
         store.flushSync();
         result.success(true);
@@ -193,9 +210,9 @@ export default class SharedPreferencesOhos implements FlutterPlugin {
    *
    * 这里在读出时把 JSON 数组文本还原成真正的 Array<string>：
    *  - 已是数组：原样返回（新写入路径）
-   *  - 非字符串或不是 `[...]` 形态：原样返回
-   *  - 解析结果必须是**扁平字符串数组**才还原，避免把以 JSON 文本形式
-   *    存储的结构化数据（站点列表、WebDAV 配置历史等对象数组）误判为列表，
+   *  - 带 LIST_TEXT_PREFIX 标记：按列表解析（允许空列表）
+   *  - 无标记的历史数据：解析结果必须是**非空扁平字符串数组**才还原。
+   *    对象数组（站点列表、WebDAV 配置历史）和 `"[]"` 都必须原样返回字符串，
    *    否则这些键在 Dart 侧 `getString()` 时会反向崩溃。
    */
   private static restoreStringList(value: Object): Object {
@@ -205,27 +222,52 @@ export default class SharedPreferencesOhos implements FlutterPlugin {
     if (typeof value !== 'string') {
       return value;
     }
-    const text: string = (value as string).trim();
-    if (text.length < 2 || !text.startsWith('[') || !text.endsWith(']')) {
+    const text: string = value as string;
+    if (text.startsWith(LIST_TEXT_PREFIX)) {
+      const body: string = text.substring(LIST_TEXT_PREFIX.length);
+      return SharedPreferencesOhos.parseStringArray(body, true) ?? body;
+    }
+    // 兼容早期无标记的降级存储：只能按内容形态猜。
+    const legacy: string = text.trim();
+    if (legacy.length < 2 || !legacy.startsWith('[') || !legacy.endsWith(']')) {
       return value;
     }
+    return SharedPreferencesOhos.parseStringArray(legacy, false) ?? value;
+  }
+
+  /**
+   * 把 JSON 文本解析成扁平字符串数组；不符合返回 null（保留原值）。
+   *
+   * 【为什么空数组不能算列表】`jsonEncode([])` 落到 setString 也是 `"[]"`，
+   * 与「空字符串列表」在文本上完全同形，内容无法区分。而 Dart 侧
+   * `SharedPreferences.getString()` 是裸强转（`_preferenceCache[key] as String?`），
+   * 一旦把这种值改写成数组，读它的键就会抛
+   * 「type 'List<Object?>' is not a subtype of type 'String?'」——
+   * 实机表现是「导出备份失败」，因为备份链路会用 getString 读
+   * webdav_config_history / siteConfigs / downloaderConfigs 这些 JSON 集合。
+   * 所以带 LIST_TEXT_PREFIX 的新格式允许空数组，无标记的旧格式只认非空数组。
+   */
+  private static parseStringArray(text: string, allowEmpty: boolean): Array<string> | null {
     try {
       const parsed: Object = JSON.parse(text) as Object;
       if (!(parsed instanceof Array)) {
-        return value;
+        return null;
       }
       const items = parsed as Array<Object>;
+      if (items.length === 0 && !allowEmpty) {
+        return null;
+      }
       const out: Array<string> = [];
       for (let i = 0; i < items.length; i++) {
         const item: Object = items[i];
         if (typeof item !== 'string') {
-          return value;
+          return null;
         }
         out.push(item as string);
       }
       return out;
     } catch (e) {
-      return value;
+      return null;
     }
   }
 
