@@ -2,7 +2,7 @@
 
 基于 [JustLookAtNow/pt_mate](https://github.com/JustLookAtNow/pt_mate) 适配的 **HarmonyOS 鸿蒙原生版本**，Flutter 3.41.10-ohos 构建，仅供个人自用，在原版基础上添加了多项下载管理与使用体验增强功能。
 
-📦 安装包（未签名 HAP）见本仓库 [发行版](https://github.com/GTX2090ti/pt_mate-Harmony/releases)，当前版本 **ohos-v1.2.1**（应用版本 `2.29.3+201`）。
+📦 安装包（未签名 HAP）见本仓库 [Releases](https://github.com/GTX2090ti/pt_mate-Harmony/releases)，当前版本 **ohos-v1.2.1**（应用版本 `2.29.3+201`）。
 
 ## 鸿蒙化适配
 
@@ -28,7 +28,7 @@
 3. **启动页背景与各端不一致**：启动窗口背景曾写死白色、深色模式改成了黑色；现与 iOS/Android 原生启动图对齐，深浅色统一为品牌蓝 `#4D74FF`
 4. **站点刷新偶发 SecureStorageUnavailableException**：优化前台恢复时安全存储初始化逻辑，避免打断进行中的站点刷新；放宽安全存储平台调用超时，适配鸿蒙真机
 5. **导出备份失败（ohos-v1.2.1）**：鸿蒙侧 `shared_preferences` 把内容形如 `[]` 的字符串偏好误判成列表回传，`getString()` 裸强转抛 `type 'List<Object?'> is not a subtype of type 'String?'`，导出在弹出保存对话框前就中止；插件侧改为按标记识别降级列表，Dart 侧读取改走无强转路径并统一归一，导入不受影响。详见 [ohos-v1.2.1 修复说明](./docs/ohos-v1.2.1-备份导出修复.md)
-6. **qBittorrent WebAPI 参数错误导致的 400**：文件选择报「文件 ID 必须是整数」、文件优先级取值非法（qB 只接受 0 / 1 / 6 / 7）、`/torrents/setPriority` 端点实际不存在（改用队列上移 / 下移 / 置顶 / 置底）、自动种子管理参数名应为 `启用`、批量加标签须用逗号分隔否则会建出名为 `a|b` 的标签
+6. **qBittorrent WebAPI 参数错误导致的 400**：文件选择报「文件 ID 必须是整数」、文件优先级取值非法（qB 只接受 0 / 1 / 6 / 7）、`/torrents/setPriority` 端点实际不存在（改用队列上移 / 下移 / 置顶 / 置底）、自动种子管理参数名应为 `enable`、批量加标签须用逗号分隔否则会建出名为 `a|b` 的标签
 7. **种子详情页布局**：四个标签行改为等宽铺满对齐，概览 / 文件 / Tracker / 用户各页行内对齐统一
 
 ## 快速开始（开发）
@@ -57,7 +57,7 @@ flutter build hap --release
 
 基于 [JustLookAtNow/pt_mate](https://github.com/JustLookAtNow/pt_mate) 适配的 **HarmonyOS 鸿蒙原生版本**，Flutter 3.41.10-ohos 构建，仅供个人自用，在原版基础上添加了多项下载管理与使用体验增强功能。
 
-📦 安装包（未签名 HAP）见本仓库 [发行版](https://github.com/GTX2090ti/pt_mate-Harmony/releases)，当前版本 **ohos-v1.2.1**（应用版本 `2.29.3+201`）。
+📦 安装包（未签名 HAP）见本仓库 [Releases](https://github.com/GTX2090ti/pt_mate-Harmony/releases)，当前版本 **ohos-v1.2.1**（应用版本 `2.29.3+201`）。
 
 ## 鸿蒙化适配
 
