@@ -65,22 +65,76 @@ class TransferInfo {
 }
 
 /// 服务器状态
+///
+/// 磁盘剩余空间各下载器都能给出；累计统计取自 qBittorrent `/sync/maindata`
+/// 的 server_state，其他下载器留 null。
 class ServerState {
   final int freeSpaceOnDisk;
 
+  final int? alltimeDl;
+  final int? alltimeUl;
+  final int? totalWastedSession;
+
+  /// 分享率、缓存命中与读写过载：qB 侧已格式化成字符串（无数据时是 "-"，
+  /// 百分比只给数值），原样保存避免二次四舍五入。
+  final String? globalRatio;
+  final String? readCacheHits;
+  final String? readCacheOverload;
+  final String? writeCacheOverload;
+
+  final int? queuedIoJobs;
+
+  /// 磁盘队列平均等待时长，qB WebUI 按毫秒展示
+  final int? averageTimeQueue;
+  final int? totalBuffersSize;
+  final int? totalQueuedSize;
+
   const ServerState({
     required this.freeSpaceOnDisk,
+    this.alltimeDl,
+    this.alltimeUl,
+    this.totalWastedSession,
+    this.globalRatio,
+    this.readCacheHits,
+    this.readCacheOverload,
+    this.writeCacheOverload,
+    this.queuedIoJobs,
+    this.averageTimeQueue,
+    this.totalBuffersSize,
+    this.totalQueuedSize,
   });
 
   factory ServerState.fromJson(Map<String, dynamic> json) {
     return ServerState(
       freeSpaceOnDisk: json['freeSpaceOnDisk'] ?? 0,
+      alltimeDl: json['alltimeDl'],
+      alltimeUl: json['alltimeUl'],
+      totalWastedSession: json['totalWastedSession'],
+      globalRatio: json['globalRatio'],
+      readCacheHits: json['readCacheHits'],
+      readCacheOverload: json['readCacheOverload'],
+      writeCacheOverload: json['writeCacheOverload'],
+      queuedIoJobs: json['queuedIoJobs'],
+      averageTimeQueue: json['averageTimeQueue'],
+      totalBuffersSize: json['totalBuffersSize'],
+      totalQueuedSize: json['totalQueuedSize'],
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'freeSpaceOnDisk': freeSpaceOnDisk,
+      'alltimeDl': alltimeDl,
+      'alltimeUl': alltimeUl,
+      'totalWastedSession': totalWastedSession,
+      'globalRatio': globalRatio,
+      'readCacheHits': readCacheHits,
+      'readCacheOverload': readCacheOverload,
+      'writeCacheOverload': writeCacheOverload,
+      'queuedIoJobs': queuedIoJobs,
+      'averageTimeQueue': averageTimeQueue,
+      'totalBuffersSize': totalBuffersSize,
+      'totalQueuedSize': totalQueuedSize,
     };
   }
 }
@@ -873,8 +927,29 @@ class TorrentPeer {
 }
 
 
+/// qBittorrent 文件优先级取值，对应其 `DownloadPriority` 枚举。
+///
+/// 2 和 3 是非法值：`/torrents/filePrio` 会用 `isValidDownloadPriority` 校验，
+/// 传过去直接 400「Priority is not valid」。
+class FilePriority {
+  static const int skipped = 0;
+  static const int normal = 1;
+  static const int high = 6;
+  static const int maximum = 7;
+
+  static const List<int> cycle = [skipped, normal, high, maximum];
+
+  /// chip 点击时的下一档；未知取值（如未加载到元数据）回到「普通」
+  static int next(int current) {
+    final index = cycle.indexOf(current);
+    if (index < 0) return normal;
+    return cycle[(index + 1) % cycle.length];
+  }
+}
+
 /// 种子文件（对应 qB /torrents/files）
-/// priority: 0=跳过(不下载) 1=普通 2=高 3=最高
+///
+/// priority 取值见 [FilePriority]，qB 侧就是 `BitTorrent::DownloadPriority` 枚举原值。
 class TorrentFile {
   final int index;
   final String name;

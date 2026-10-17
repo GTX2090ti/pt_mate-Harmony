@@ -469,7 +469,7 @@ class DownloaderService {
   }
 
   /// 设置文件优先级（仅 qBittorrent）
-  /// priority: 0=跳过(不下载) 1=普通 2=高 3=最高
+  /// priority 取值见 [FilePriority]：0=跳过 1=普通 6=高 7=最高
   Future<void> setFilePriority({
     required DownloaderConfig config,
     required String password,

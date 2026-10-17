@@ -342,7 +342,34 @@ class QbittorrentClient
         ? serverState['free_space_on_disk'] as int
         : FormatUtil.parseInt(serverState['free_space_on_disk']) ?? 0;
 
-    return ServerState(freeSpaceOnDisk: freeSpaceOnDisk);
+    return ServerState(
+      freeSpaceOnDisk: freeSpaceOnDisk,
+      alltimeDl: _statInt(serverState['alltime_dl']),
+      alltimeUl: _statInt(serverState['alltime_ul']),
+      totalWastedSession: _statInt(serverState['total_wasted_session']),
+      globalRatio: _statText(serverState['global_ratio']),
+      readCacheHits: _statText(serverState['read_cache_hits']),
+      readCacheOverload: _statText(serverState['read_cache_overload']),
+      writeCacheOverload: _statText(serverState['write_cache_overload']),
+      queuedIoJobs: _statInt(serverState['queued_io_jobs']),
+      averageTimeQueue: _statInt(serverState['average_time_queue']),
+      totalBuffersSize: _statInt(serverState['total_buffers_size']),
+      totalQueuedSize: _statInt(serverState['total_queued_size']),
+    );
+  }
+
+  /// server_state 里的数值偶尔会以字符串下发，统一容错
+  int? _statInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return FormatUtil.parseInt(value.toString());
+  }
+
+  String? _statText(dynamic value) {
+    if (value == null) return null;
+    final text = value.toString();
+    return text.isEmpty ? null : text;
   }
 
   @override
@@ -767,21 +794,66 @@ class QbittorrentClient
     return TorrentProperties.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// 获取单个任务的原始 info 字典
+  ///
+  /// 概览页需要 `force_start`、`seq_dl`、`f_l_piece_prio`、`super_seeding`、
+  /// `auto_tmm` 等 [DownloadTask] 未覆盖的字段，各 qB 版本字段名还有别名差异，
+  /// 因此这里直接透传原始 JSON，由页面按别名取值。
+  Future<Map<String, dynamic>?> getTorrentInfoRaw(String hash) async {
+    final response = await _request('GET', '/torrents/info', body: {
+      'hashes': hash,
+    });
+    final raw = response.data;
+    if (raw is! List || raw.isEmpty) return null;
+    final first = raw.first;
+    return first is Map<String, dynamic> ? first : null;
+  }
+
+  // ============================================================
+  // 专业增强 API：任务开关（概览页「其他设置项」）
+  // ============================================================
+
+  /// 强制开始（忽略队列与速度限制）
+  Future<void> setForceStart(List<String> hashes, bool value) async {
+    await _request('POST', '/torrents/setForceStart', body: {
+      'hashes': hashes.join('|'),
+      'value': value.toString(),
+    });
+  }
+
+  /// 超级做种（只做种已校验的分块）
+  Future<void> setSuperSeeding(List<String> hashes, bool value) async {
+    await _request('POST', '/torrents/setSuperSeeding', body: {
+      'hashes': hashes.join('|'),
+      'value': value.toString(),
+    });
+  }
+
+  /// 自动种子管理（随分类改变保存路径）。注意这个接口的开关参数叫 enable。
+  Future<void> setAutoManagement(List<String> hashes, bool value) async {
+    await _request('POST', '/torrents/setAutoManagement', body: {
+      'hashes': hashes.join('|'),
+      'enable': value.toString(),
+    });
+  }
+
+  /// 顺序下载开关。qB WebAPI 只有 toggle，没有 set。
+  Future<void> toggleSequentialDownload(List<String> hashes) async {
+    await _request('POST', '/torrents/toggleSequentialDownload', body: {
+      'hashes': hashes.join('|'),
+    });
+  }
+
+  /// 首尾分块优先开关。qB WebAPI 只有 toggle，没有 set。
+  Future<void> toggleFirstLastPiecePrio(List<String> hashes) async {
+    await _request('POST', '/torrents/toggleFirstLastPiecePrio', body: {
+      'hashes': hashes.join('|'),
+    });
+  }
+
   // ============================================================
   // 专业增强 API：优先级 / 队列
   // ============================================================
-
-  /// 设置任务优先级
-  /// [priority]: -1=跳过, 0=普通, 1=高, 2=最高
-  Future<void> setTorrentPriority(
-    List<String> hashes,
-    int priority,
-  ) async {
-    await _request('POST', '/torrents/setPriority', body: {
-      'hashes': hashes.join('|'),
-      'priority': priority.toString(),
-    });
-  }
 
   /// 队列最前（topPrio）
   Future<void> topPriority(List<String> hashes) async {
@@ -816,10 +888,13 @@ class QbittorrentClient
   // ============================================================
 
   /// 批量添加标签
+  ///
+  /// 注意分隔符：`hashes` 用竖线，`tags` 用逗号（qB 侧 `split(u',')`，官方 WebUI
+  /// 甚至禁止标签名里出现逗号），传竖线会建出一个叫「a|b」的标签。
   Future<void> addTags(List<String> hashes, List<String> tags) async {
     await _request('POST', '/torrents/addTags', body: {
       'hashes': hashes.join('|'),
-      'tags': tags.join('|'),
+      'tags': tags.join(','),
     });
   }
 
@@ -827,7 +902,7 @@ class QbittorrentClient
   Future<void> removeTags(List<String> hashes, List<String> tags) async {
     await _request('POST', '/torrents/removeTags', body: {
       'hashes': hashes.join('|'),
-      'tags': tags.join('|'),
+      'tags': tags.join(','),
     });
   }
 
@@ -835,7 +910,7 @@ class QbittorrentClient
   Future<void> createTags(List<String> tags) async {
     if (tags.isEmpty) return;
     await _request('POST', '/torrents/createTags', body: {
-      'tags': tags.join('|'),
+      'tags': tags.join(','),
     });
   }
 
@@ -843,7 +918,7 @@ class QbittorrentClient
   Future<void> deleteTags(List<String> tags) async {
     if (tags.isEmpty) return;
     await _request('POST', '/torrents/deleteTags', body: {
-      'tags': tags.join('|'),
+      'tags': tags.join(','),
     });
   }
 
@@ -931,8 +1006,8 @@ class QbittorrentClient
   }
 
   /// 设置文件优先级（对应 POST /torrents/filePrio）
-  /// priority: 0=跳过(不下载) 1=普通 2=高 3=最高
-  /// [ids] 为文件 index 列表（逗号拼接）
+  /// priority 取值见 [FilePriority]：0=跳过 1=普通 6=高 7=最高
+  /// [ids] 为文件 index 列表，qB 用竖线分隔（逗号会被判成非法整数）
   Future<void> setFilePriority({
     required String hash,
     required List<int> ids,
@@ -941,7 +1016,7 @@ class QbittorrentClient
     if (ids.isEmpty) return;
     await _request('POST', '/torrents/filePrio', body: {
       'hash': hash,
-      'id': ids.join(','),
+      'id': ids.join('|'),
       'priority': priority.toString(),
     });
   }

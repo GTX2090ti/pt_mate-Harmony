@@ -66,4 +66,5 @@ ohos/HoKit/
 
 # 本地发布产物（HAP 等）
 /release/
+/hap/
 

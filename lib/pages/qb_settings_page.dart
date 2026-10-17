@@ -4,6 +4,9 @@ import 'package:provider/provider.dart';
 import '../services/storage/storage_service.dart';
 import '../services/theme/theme_manager.dart';
 import '../services/downloader/downloader_config.dart';
+import '../services/downloader/downloader_models.dart';
+import '../services/downloader/downloader_service.dart';
+import '../utils/format.dart';
 import '../utils/notification_helper.dart';
 import 'download_health_page.dart';
 import 'qb_server_settings_page.dart';
@@ -21,11 +24,17 @@ class QbSettingsPage extends StatefulWidget {
 class _QbSettingsPageState extends State<QbSettingsPage> {
   int _refreshInterval = 5; // 秒
   bool _showAllTasks = false;
-  bool _groupByCategory = true;
   bool _loading = true;
 
   // 服务器设置入口需要判断当前下载器是否为 qBittorrent
   DownloaderConfig? _config;
+  String? _password;
+
+  // 累计统计取自下载器的 server_state，qBittorrent 才给全
+  ServerState? _stats;
+  String? _savePath;
+  bool _statsLoading = false;
+  String? _statsError;
 
   @override
   void initState() {
@@ -44,12 +53,55 @@ class _QbSettingsPageState extends State<QbSettingsPage> {
         orElse: () =>
             configs.isNotEmpty ? configs.first : throw Exception('未找到默认下载器'),
       );
+      final config = DownloaderConfig.fromJson(configMap);
+      final pwd = await StorageService.instance.loadDownloaderPassword(
+        config.id,
+      );
       if (!mounted) return;
       setState(() {
-        _config = DownloaderConfig.fromJson(configMap);
+        _config = config;
+        _password = pwd;
       });
+      _loadStats();
     } catch (_) {
       // 无下载器配置时服务器设置入口置灰
+    }
+  }
+
+  Future<void> _loadStats() async {
+    final config = _config;
+    final password = _password;
+    if (config == null || password == null || password.isEmpty) return;
+    setState(() {
+      _statsLoading = true;
+      _statsError = null;
+    });
+    try {
+      final state = await DownloaderService.instance.getServerState(
+        config: config,
+        password: password,
+      );
+      String? savePath;
+      if (config is QbittorrentConfig) {
+        final prefs = await DownloaderService.instance.getPreferences(
+          config: config,
+          password: password,
+        );
+        final raw = prefs['save_path'];
+        savePath = (raw is String && raw.isNotEmpty) ? raw : null;
+      }
+      if (!mounted) return;
+      setState(() {
+        _stats = state;
+        _savePath = savePath;
+        _statsLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _statsLoading = false;
+        _statsError = '$e';
+      });
     }
   }
 
@@ -57,13 +109,10 @@ class _QbSettingsPageState extends State<QbSettingsPage> {
     final interval = await StorageService.instance
         .loadDownloadTasksRefreshInterval();
     final showAll = await StorageService.instance.loadDownloadTasksShowAll();
-    final groupByCategory = await StorageService.instance
-        .loadDownloadTasksGroupByCategory();
     if (!mounted) return;
     setState(() {
       _refreshInterval = interval;
       _showAllTasks = showAll;
-      _groupByCategory = groupByCategory;
       _loading = false;
     });
   }
@@ -83,13 +132,6 @@ class _QbSettingsPageState extends State<QbSettingsPage> {
       _showAllTasks = value;
     });
     await StorageService.instance.saveDownloadTasksShowAll(value);
-  }
-
-  Future<void> _saveGroupByCategory(bool value) async {
-    setState(() {
-      _groupByCategory = value;
-    });
-    await StorageService.instance.saveDownloadTasksGroupByCategory(value);
   }
 
   String _getThemeModeText(AppThemeMode mode) {
@@ -199,6 +241,8 @@ class _QbSettingsPageState extends State<QbSettingsPage> {
                 _sectionHeader(context, '服务器设置'),
                 _serverSettingsCard(context),
                 const SizedBox(height: 16),
+                _statsSection(context),
+                const SizedBox(height: 16),
                 _sectionHeader(context, '任务工具'),
                 Card(
                   margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -284,14 +328,6 @@ class _QbSettingsPageState extends State<QbSettingsPage> {
                         value: _showAllTasks,
                         onChanged: _saveShowAll,
                       ),
-                      const Divider(height: 1, indent: 56),
-                      SwitchListTile(
-                        secondary: const Icon(Icons.folder_outlined),
-                        title: const Text('按分类分组'),
-                        subtitle: const Text('同分类折叠成一组，点击组头展开收起'),
-                        value: _groupByCategory,
-                        onChanged: _saveGroupByCategory,
-                      ),
                     ],
                   ),
                 ),
@@ -299,6 +335,181 @@ class _QbSettingsPageState extends State<QbSettingsPage> {
             ),
     );
   }
+
+  Widget _statsSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _statsHeader(context),
+        _card(context, child: _statsBody(context)),
+      ],
+    );
+  }
+
+  Widget _statsHeader(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '累计统计',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          if (_statsLoading && _stats != null)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else
+            IconButton(
+              tooltip: '刷新统计',
+              icon: const Icon(Icons.refresh),
+              onPressed: _statsLoading ? null : _loadStats,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statsBody(BuildContext context) {
+    final theme = Theme.of(context);
+    final state = _stats;
+    if (state == null) {
+      if (_statsLoading) {
+        return const Padding(
+          padding: EdgeInsets.symmetric(vertical: 24),
+          child: Center(
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        );
+      }
+      final message = _statsError ??
+          (_config == null ? '请先配置下载器' : '请先保存下载器密码');
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                message,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ),
+            if (_statsError != null)
+              TextButton(onPressed: _loadStats, child: const Text('重试')),
+          ],
+        ),
+      );
+    }
+
+    final isQb = _config is QbittorrentConfig;
+    final rows = <(String, String)>[
+      ('磁盘空间', '${Formatters.dataFromBytes(state.freeSpaceOnDisk)} 可用'),
+      if (isQb) ...[
+        if (_savePath != null) ('默认保存路径', _savePath!),
+        ('历史下载', _bytes(state.alltimeDl)),
+        ('历史上传', _bytes(state.alltimeUl)),
+        ('分享率', state.globalRatio ?? '-'),
+        ('会话浪费', _bytes(state.totalWastedSession)),
+        ('读缓存命中', _percent(state.readCacheHits)),
+        ('总缓冲大小', _bytes(state.totalBuffersSize)),
+        ('写入缓存超载', _percent(state.writeCacheOverload)),
+        ('读取缓存超载', _percent(state.readCacheOverload)),
+        ('队列 I/O', _count(state.queuedIoJobs)),
+        ('平均队列时间', _ms(state.averageTimeQueue)),
+        ('总队列大小', _bytes(state.totalQueuedSize)),
+      ],
+    ];
+
+    return Column(
+      children: [
+        for (final row in rows) _statRow(context, row.$1, row.$2),
+        if (!isQb)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Text(
+              '累计统计项需要 qBittorrent 下载器',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _statRow(BuildContext context, String label, String value) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _card(BuildContext context, {required Widget child}) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: Theme.of(
+            context,
+          ).colorScheme.outlineVariant.withValues(alpha: 0.4),
+        ),
+      ),
+      child: child,
+    );
+  }
+
+  String _bytes(int? value) =>
+      value == null ? '-' : Formatters.dataFromBytes(value);
+
+  String _percent(String? value) => value == null ? '-' : '$value%';
+
+  String _count(int? value) => value == null ? '-' : '$value';
+
+  String _ms(int? value) => value == null ? '-' : '$value ms';
 
   Widget _serverSettingsCard(BuildContext context) {
     final isQb = _config is QbittorrentConfig;

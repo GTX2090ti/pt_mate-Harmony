@@ -251,11 +251,7 @@ void main() {
   test(
     'download task filter preferences round trip',
     () async {
-      expect(await service.loadDownloadTasksGroupByCategory(), isTrue);
       expect(await service.loadDownloadTasksCategoryFilter(), isEmpty);
-
-      await service.saveDownloadTasksGroupByCategory(false);
-      expect(await service.loadDownloadTasksGroupByCategory(), isFalse);
 
       // 空串分类代表「未分类」，必须能存下来
       await service.saveDownloadTasksCategoryFilter(['HD', '']);

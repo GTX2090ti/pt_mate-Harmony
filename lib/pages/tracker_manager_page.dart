@@ -10,11 +10,12 @@ import '../utils/format.dart';
 import 'package:pt_mate/utils/notification_helper.dart';
 import 'torrent_peers_page.dart';
 import 'torrent_files_page.dart';
+import 'torrent_overview_view.dart';
 
-/// Tracker 管理页
+/// 种子详情页
 ///
-/// 查看指定任务的全部 Tracker 状态（红种/工作/未连接）、
-/// 一键 reannounce、添加/编辑/删除 Tracker。
+/// 概览 / 文件 / Tracker / 用户 四个标签，对齐 qBittorrent 官方种子属性面板。
+/// Tracker 标签可查看红种/工作/未连接状态、一键 reannounce、添加/编辑/删除。
 class TrackerManagerPage extends StatefulWidget {
   final String taskHash;
   final String taskName;
@@ -240,10 +241,15 @@ class _TrackerManagerPageState extends State<TrackerManagerPage> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Tracker / 节点 / 文件'),
+          title: Text(
+            widget.taskName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 16),
+          ),
           leading: IconButton(
             tooltip: '返回',
             icon: const Icon(Icons.arrow_back),
@@ -251,77 +257,235 @@ class _TrackerManagerPageState extends State<TrackerManagerPage> {
           ),
           automaticallyImplyLeading: false,
           bottom: const TabBar(
+            // 等宽铺满：可滚动的左对齐会让四段宽度随文字长短变化，指示条位置也跟着漂
+            tabAlignment: TabAlignment.fill,
+            indicatorSize: TabBarIndicatorSize.tab,
+            labelPadding: EdgeInsets.symmetric(horizontal: 8),
             tabs: [
-              Tab(text: 'Tracker'),
-              Tab(text: '节点'),
+              Tab(text: '概览'),
               Tab(text: '文件'),
+              Tab(text: 'Tracker'),
+              Tab(text: '用户'),
             ],
           ),
           actions: [
             IconButton(
               tooltip: '重新宣告',
-              onPressed: _loading ? null : _reannounceAll,
+              onPressed: (_loading || !_hasClient) ? null : _reannounceAll,
               icon: const Icon(Icons.sync),
-            ),
-            IconButton(
-              tooltip: '添加 Tracker',
-              onPressed: _loading ? null : _addTracker,
-              icon: const Icon(Icons.add_link),
             ),
           ],
         ),
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        body: TabBarView(
+          children: [
+            _buildOverviewTab(),
+            if (_hasClient)
+              TorrentFilesView(
+                taskHash: widget.taskHash,
+                config: _config!,
+                password: _password!,
+              )
+            else
+              _configPlaceholder(),
+            _buildTrackerTab(),
+            if (_hasClient)
+              TorrentPeersView(
+                taskHash: widget.taskHash,
+                config: _config!,
+                password: _password!,
+              )
+            else
+              _configPlaceholder(),
+          ],
+        ),
+        floatingActionButton: FloatingActionButton(
+          heroTag: 'add_tracker',
+          tooltip: '添加 Tracker',
+          onPressed: (_loading || !_hasClient) ? null : _addTracker,
+          child: const Icon(Icons.add),
+        ),
+      ),
+    );
+  }
+
+  bool get _hasClient => _config != null && (_password ?? '').isNotEmpty;
+
+  Widget _configPlaceholder() {
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            _error!,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ),
+      );
+    }
+    return const Center(child: Text('加载配置中…'));
+  }
+
+  Widget _buildOverviewTab() {
+    if (!_hasClient) return _configPlaceholder();
+    return TorrentOverviewView(
+      taskHash: widget.taskHash,
+      taskName: widget.taskName,
+      config: _config!,
+      password: _password!,
+    );
+  }
+
+  /// DHT / PeX / LSD 这类伪节点没有 URL，单独成一组
+  bool _isSpecialNode(TorrentTracker tracker) {
+    final url = tracker.url.trim();
+    return url.isEmpty || url.startsWith('**');
+  }
+
+  Widget _buildTrackerTab() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null && _trackers.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Text(
-                widget.taskName,
-                style: Theme.of(context).textTheme.titleSmall,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+                _error!,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ),
-            if (_error != null)
+            const SizedBox(height: 16),
+            ElevatedButton(onPressed: _load, child: const Text('重试')),
+          ],
+        ),
+      );
+    }
+    final special = _trackers.where(_isSpecialNode).toList();
+    final normal = _trackers.where((t) => !_isSpecialNode(t)).toList();
+    if (normal.isEmpty && special.isEmpty) {
+      final scheme = Theme.of(context).colorScheme;
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.wifi_off_rounded, size: 56, color: scheme.outline),
+            const SizedBox(height: 10),
+            Text('没有 Tracker', style: TextStyle(color: scheme.outline)),
+            const SizedBox(height: 4),
+            Text(
+              '点右下角 + 添加 Tracker',
+              style: TextStyle(fontSize: 12, color: scheme.outline),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 按层级分组，-1（未分层）排最后
+    final byTier = <int, List<TorrentTracker>>{};
+    for (final tracker in normal) {
+      byTier.putIfAbsent(tracker.tier, () => <TorrentTracker>[]).add(tracker);
+    }
+    final tiers = byTier.keys.toList()
+      ..sort((a, b) {
+        if (a < 0) return 1;
+        if (b < 0) return -1;
+        return a.compareTo(b);
+      });
+
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 88),
+      children: [
+        if (special.isNotEmpty) _buildSpecialNodes(special),
+        for (final tier in tiers) ...[
+          _buildTierHeader(tier, byTier[tier]!.length),
+          for (final tracker in byTier[tier]!) _buildTrackerCard(tracker),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildTierHeader(int tier, int count) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+      child: Row(
+        children: [
+          Text(
+            tier < 0 ? '未分层' : '层级 $tier',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: scheme.primary,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '$count 个',
+            style: TextStyle(fontSize: 11, color: scheme.secondary),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 特殊节点（DHT / PeX / LSD）合成一张卡，只读展示状态
+  Widget _buildSpecialNodes(List<TorrentTracker> special) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '特殊节点',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: scheme.primary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            for (final tracker in special)
               Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.circle,
+                      size: 8,
+                      color: tracker.isDisabled
+                          ? scheme.outline
+                          : (tracker.isWorking ? Colors.green : scheme.tertiary),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        tracker.url.replaceAll('*', '').trim().isEmpty
+                            ? tracker.url
+                            : tracker.url.replaceAll('*', '').trim(),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    Text(
+                      _trackerStatusText(tracker),
+                      style: TextStyle(fontSize: 11, color: scheme.secondary),
+                    ),
+                  ],
                 ),
               ),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  _loading
-                      ? const Center(child: CircularProgressIndicator())
-                      : ListView.builder(
-                          itemCount: _trackers.length,
-                          padding: const EdgeInsets.only(bottom: 32),
-                          itemBuilder: (context, index) {
-                            final tracker = _trackers[index];
-                            return _buildTrackerCard(tracker);
-                          },
-                        ),
-                  if (_config != null && (_password ?? '').isNotEmpty)
-                    TorrentPeersView(
-                      taskHash: widget.taskHash,
-                      config: _config!,
-                      password: _password!,
-                    )
-                  else
-                    const Center(child: Text('加载配置中…')),
-                  if (_config != null && (_password ?? '').isNotEmpty)
-                    TorrentFilesView(
-                      taskHash: widget.taskHash,
-                      config: _config!,
-                      password: _password!,
-                    )
-                  else
-                    const Center(child: Text('加载配置中…')),
-                ],
-              ),
-            ),
           ],
         ),
       ),
@@ -406,11 +570,13 @@ class _TrackerManagerPageState extends State<TrackerManagerPage> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  '层级 ${_trackerNum(tracker.tier)}',
-                  style: TextStyle(fontSize: 11, color: scheme.secondary),
-                ),
+                if (tracker.tier >= 0) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    '层级 ${tracker.tier}',
+                    style: TextStyle(fontSize: 11, color: scheme.secondary),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 4),

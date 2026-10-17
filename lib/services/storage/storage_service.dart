@@ -95,10 +95,6 @@ class StorageKeys {
       'downloader.refreshInterval'; // int 秒
   static const String downloadTasksShowAll =
       'downloader.showAllTasks'; // bool
-  static const String downloadTasksCollapsedCategories =
-      'downloader.collapsedCategories'; // List<String>
-  static const String downloadTasksGroupByCategory =
-      'downloader.groupByCategory'; // bool
   static const String downloadTasksCategoryFilter =
       'downloader.categoryFilter'; // List<String>
   static const String downloadTasksTagFilter =
@@ -4253,40 +4249,6 @@ class StorageService {
   Future<bool> loadDownloadTasksShowAll() async {
     final prefs = await _prefs;
     return prefs.getBool(StorageKeys.downloadTasksShowAll) ?? false;
-  }
-
-  // 下载任务页：按分类折叠的分组（默认全部展开）
-  Future<void> saveDownloadTasksCollapsedCategories(
-    List<String> categories,
-  ) async {
-    final prefs = await _prefs;
-    if (categories.isEmpty) {
-      await prefs.remove(StorageKeys.downloadTasksCollapsedCategories);
-    } else {
-      await prefs.setStringList(
-        StorageKeys.downloadTasksCollapsedCategories,
-        categories,
-      );
-    }
-  }
-
-  Future<List<String>> loadDownloadTasksCollapsedCategories() async {
-    final prefs = await _prefs;
-    return prefs.getStringList(
-          StorageKeys.downloadTasksCollapsedCategories,
-        ) ??
-        <String>[];
-  }
-
-  // 下载任务页筛选面板：是否按分类分组
-  Future<void> saveDownloadTasksGroupByCategory(bool enable) async {
-    final prefs = await _prefs;
-    await prefs.setBool(StorageKeys.downloadTasksGroupByCategory, enable);
-  }
-
-  Future<bool> loadDownloadTasksGroupByCategory() async {
-    final prefs = await _prefs;
-    return prefs.getBool(StorageKeys.downloadTasksGroupByCategory) ?? true;
   }
 
   // 下载任务页筛选面板：多选分类（空列表表示不限）

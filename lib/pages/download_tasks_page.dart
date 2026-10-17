@@ -5,6 +5,7 @@ import '../services/storage/storage_service.dart';
 import '../services/downloader/downloader_config.dart';
 import '../services/downloader/downloader_service.dart';
 import '../services/downloader/downloader_models.dart';
+import '../services/downloader/qbittorrent_client.dart';
 import '../services/downloader/seed_health_monitor.dart';
 import '../services/downloader/disk_guard_service.dart';
 import '../utils/format.dart';
@@ -17,6 +18,7 @@ import 'tracker_manager_page.dart';
 import 'download_health_page.dart';
 import 'qb_settings_page.dart';
 import '../widgets/category_picker_dialog.dart';
+import '../widgets/tag_picker_dialog.dart';
 import '../utils/screen_utils.dart';
 
 enum SortField {
@@ -74,7 +76,6 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
   bool _isLoading = true;
   String? _errorMessage;
   List<DownloadTask> _tasks = [];
-  TransferInfo? _transferInfo;
   ServerState? _serverState;
   DownloaderConfig? _downloaderConfig;
   String? _password;
@@ -94,13 +95,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
   // 状态筛选 Tab（qB 风格）
   _TaskFilter _statusFilter = _TaskFilter.all;
 
-  // 按分类折叠的分组（key 为分类名，空串表示未分类）
-  final Set<String> _collapsedCategories = {};
-
-  // 筛选面板：是否按分类分组展示
-  bool _groupByCategory = true;
-
-  // 筛选面板：多选中的分类，空集表示不限
+  // 筛选面板：单选中的分类，空集表示「全部」
   final Set<String> _categoryFilter = {};
 
   // 筛选面板：多选中的标签（命中任一即显示），空集表示不限
@@ -115,14 +110,6 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
           _showAllTasks = value;
         });
       }
-    });
-    StorageService.instance.loadDownloadTasksCollapsedCategories().then((
-      value,
-    ) {
-      if (mounted) setState(() => _collapsedCategories.addAll(value));
-    });
-    StorageService.instance.loadDownloadTasksGroupByCategory().then((value) {
-      if (mounted) setState(() => _groupByCategory = value);
     });
     StorageService.instance.loadDownloadTasksCategoryFilter().then((value) {
       if (mounted) setState(() => _categoryFilter.addAll(value));
@@ -255,7 +242,6 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
 
       final List<dynamic> futures = await Future.wait([
         client.getTasks(),
-        client.getTransferInfo(),
         client.getServerState(),
       ]);
 
@@ -266,8 +252,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
 
       setState(() {
         _tasks = tasks;
-        _transferInfo = futures[1] as TransferInfo;
-        _serverState = futures[2] as ServerState;
+        _serverState = futures[1] as ServerState;
         _diskGuardConfig = diskConfig;
         _readyToDelete = ready;
         if (!silent) _isLoading = false;
@@ -335,6 +320,38 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
               tooltip: '批量恢复',
               icon: const Icon(Icons.play_arrow),
               onPressed: _selectedHashes.isEmpty ? null : () => _bulkResume(),
+            ),
+            PopupMenuButton<String>(
+              tooltip: '批量分类 / 标签',
+              enabled: _selectedHashes.isNotEmpty,
+              icon: const Icon(Icons.drive_file_rename_outline),
+              onSelected: (value) {
+                if (value == 'category') {
+                  _bulkSetCategory();
+                } else if (value == 'tags') {
+                  _bulkAddTags();
+                }
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem<String>(
+                  value: 'category',
+                  child: ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.folder_outlined),
+                    title: Text('批量修改分类'),
+                  ),
+                ),
+                PopupMenuItem<String>(
+                  value: 'tags',
+                  child: ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.label_outline),
+                    title: Text('批量添加标签'),
+                  ),
+                ),
+              ],
             ),
             IconButton(
               tooltip: '批量删除',
@@ -417,8 +434,6 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                   _buildSeedHealthBanner(),
                 // 搜索和过滤UI
                 _buildSearchAndFilterBar(),
-                // 传输状态指示
-                _buildTransferStateBar(),
                 Expanded(child: _buildAllTasksList()),
               ],
             ),
@@ -705,13 +720,29 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
     }
   }
 
-  Future<void> _setPriority(int priority) async {
+  // 批量添加标签
+  Future<void> _bulkAddTags() async {
+    final config = _downloaderConfig;
+    final pwd = _password;
+    if (config == null || (pwd ?? '').isEmpty) {
+      NotificationHelper.showError(context, '未配置下载器');
+      return;
+    }
+    final tags = await TagPickerDialog.show(
+      context,
+      config: config,
+      password: pwd!,
+    );
+    if (tags == null || tags.isEmpty) return;
     try {
       final client = _getClient();
       if (client == null) return;
-      await client.setTorrentPriority(_selectedHashes.toList(), priority);
+      await client.addTags(_selectedHashes.toList(), tags);
       if (!mounted) return;
-      NotificationHelper.showInfo(context, '优先级已更新');
+      NotificationHelper.showInfo(
+        context,
+        '已为 ${_selectedHashes.length} 个任务添加 ${tags.length} 个标签',
+      );
       setState(() {
         _selectionMode = false;
         _selectedHashes.clear();
@@ -719,7 +750,35 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
       await _loadTasks(silent: true);
     } catch (e) {
       if (!mounted) return;
-      NotificationHelper.showError(context, '设置优先级失败: ' + e.toString());
+      NotificationHelper.showError(context, '批量添加标签失败: $e');
+    }
+  }
+
+  /// qBittorrent 没有「把任务设成第 N 档优先级」的接口（4.6/5.0/master 都查过），
+  /// 队列只能相对移动或置顶/置底，所以这里走那四个真实存在的端点。
+  Future<void> _queueAction(
+    String label,
+    Future<void> Function(QbittorrentClient client, List<String> hashes) action,
+  ) async {
+    final client = _getClient();
+    if (client is! QbittorrentClient) {
+      NotificationHelper.showError(context, '队列调整需要 qBittorrent 下载器');
+      return;
+    }
+    final hashes = _selectedHashes.toList();
+    if (hashes.isEmpty) return;
+    try {
+      await action(client, hashes);
+      if (!mounted) return;
+      NotificationHelper.showInfo(context, '$label（${hashes.length} 个任务）');
+      setState(() {
+        _selectionMode = false;
+        _selectedHashes.clear();
+      });
+      await _loadTasks(silent: true);
+    } catch (e) {
+      if (!mounted) return;
+      NotificationHelper.showError(context, '$label 失败: $e');
     }
   }
 
@@ -742,36 +801,37 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
             ),
             const Divider(height: 1),
             ListTile(
-              leading: const Icon(Icons.skip_next),
-              title: const Text('优先级: 跳过'),
-              subtitle: const Text('不参与下载队列'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _setPriority(-1);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.horizontal_rule),
-              title: const Text('优先级: 普通'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _setPriority(0);
-              },
-            ),
-            ListTile(
               leading: const Icon(Icons.arrow_upward),
-              title: const Text('优先级: 高'),
+              title: const Text('队列上移'),
+              subtitle: const Text('在下载队列中前移一位'),
               onTap: () {
                 Navigator.pop(sheetContext);
-                _setPriority(1);
+                _queueAction('队列上移', (c, h) => c.increasePriority(h));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.arrow_downward),
+              title: const Text('队列下移'),
+              subtitle: const Text('在下载队列中后移一位'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _queueAction('队列下移', (c, h) => c.decreasePriority(h));
               },
             ),
             ListTile(
               leading: const Icon(Icons.vertical_align_top),
-              title: const Text('优先级: 最高'),
+              title: const Text('队列置顶'),
               onTap: () {
                 Navigator.pop(sheetContext);
-                _setPriority(2);
+                _queueAction('队列置顶', (c, h) => c.topPriority(h));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.vertical_align_bottom),
+              title: const Text('队列置底'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _queueAction('队列置底', (c, h) => c.bottomPriority(h));
               },
             ),
             const Divider(height: 1),
@@ -781,6 +841,14 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
               onTap: () {
                 Navigator.pop(sheetContext);
                 _bulkSetCategory();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.label_outline),
+              title: const Text('批量添加标签'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _bulkAddTags();
               },
             ),
             const Divider(height: 1),
@@ -924,7 +992,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Row(
             children: [
               _buildQuickChip(
@@ -933,14 +1001,14 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                 active: _categoryFilter.isNotEmpty,
                 onTap: _showCategorySheet,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               _buildQuickChip(
                 icon: Icons.label_outlined,
                 label: _filterChipLabel(_tagFilter, '标签'),
                 active: _tagFilter.isNotEmpty,
                 onTap: _showTagSheet,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               _buildQuickChip(
                 icon: _sortAscending
                     ? Icons.arrow_upward
@@ -949,58 +1017,6 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                 onTap: _showSortSheet,
               ),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTransferStateBar() {
-    if (_transferInfo == null || _serverState == null) {
-      return const SizedBox.shrink();
-    }
-
-    if (ScreenUtils.isLargeScreen(context)) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: Theme.of(context).colorScheme.surfaceContainerLow,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Row(
-              children: [
-                Icon(
-                  Icons.cloud_download,
-                  size: 16,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '下载: ${Formatters.dataFromBytes(_transferInfo!.dlTotal)}',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: Row(
-              children: [
-                Icon(
-                  Icons.cloud_upload,
-                  size: 16,
-                  color: Theme.of(context).colorScheme.tertiary,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '上传: ${Formatters.dataFromBytes(_transferInfo!.upTotal)}',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
           ),
         ],
       ),
@@ -1123,7 +1139,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
           .toList();
     }
 
-    // 筛选面板：仅展示多选中的分类（空集表示不限）
+    // 筛选面板：仅展示单选中的分类（空集表示「全部」）
     if (_categoryFilter.isNotEmpty) {
       statusFilteredTasks = statusFilteredTasks
           .where((task) => _categoryFilter.contains(task.category.trim()))
@@ -1217,24 +1233,10 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
       );
     }
 
-    // 按分类分组（多于一个分类时才显示可折叠的分组头）
-    final groups = _groupByCategory
-        ? _buildCategoryGroups(filteredTasks)
-        : const <_TaskCategoryGroup>[];
-    final rows = <Object>[];
-    if (groups.length > 1) {
-      for (final group in groups) {
-        rows.add(group);
-        if (!_collapsedCategories.contains(group.key)) rows.addAll(group.tasks);
-      }
-    } else {
-      rows.addAll(filteredTasks);
-    }
-
     return RefreshIndicator(
       onRefresh: _loadTasks,
       child: ListView.builder(
-        itemCount: rows.length,
+        itemCount: filteredTasks.length,
         padding: const EdgeInsets.only(
           left: 16,
           top: 4,
@@ -1242,14 +1244,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
           bottom: 150,
         ),
         itemBuilder: (context, index) {
-          final row = rows[index];
-          if (row is _TaskCategoryGroup) {
-            return KeyedSubtree(
-              key: ValueKey('cat_group_${row.key}'),
-              child: _buildCategoryGroupHeader(row),
-            );
-          }
-          final task = row as DownloadTask;
+          final task = filteredTasks[index];
           return KeyedSubtree(
             key: ValueKey('task_${task.hash}'),
             child: _buildTaskCard(task),
@@ -1265,24 +1260,6 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
     return a.toLowerCase().compareTo(b.toLowerCase());
   }
 
-  List<_TaskCategoryGroup> _buildCategoryGroups(List<DownloadTask> tasks) {
-    final bucket = <String, List<DownloadTask>>{};
-    for (final task in tasks) {
-      final key = task.category.trim();
-      bucket.putIfAbsent(key, () => <DownloadTask>[]).add(task);
-    }
-    if (bucket.length <= 1) return const [];
-    final keys = bucket.keys.toList()..sort(_compareCategoryKey);
-    return [
-      for (final key in keys)
-        _TaskCategoryGroup(
-          key: key,
-          title: key.isEmpty ? '未分类' : key,
-          tasks: bucket[key]!,
-        ),
-    ];
-  }
-
   // 当前任务列表里出现过的分类及其任务数（未分类 key 为空串）
   Map<String, int> _categoryCounts() {
     final counts = <String, int>{};
@@ -1292,15 +1269,6 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
     }
     final keys = counts.keys.toList()..sort(_compareCategoryKey);
     return {for (final key in keys) key: counts[key]!};
-  }
-
-  void _toggleCategoryGroup(String key) {
-    setState(() {
-      if (!_collapsedCategories.remove(key)) _collapsedCategories.add(key);
-    });
-    StorageService.instance.saveDownloadTasksCollapsedCategories(
-      _collapsedCategories.toList(),
-    );
   }
 
   String _optionLabel(String key) => key.isEmpty ? '未分类' : key;
@@ -1322,29 +1290,29 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
     final foreground = active ? scheme.primary : scheme.onSurface;
     return Expanded(
       child: SizedBox(
-        height: 44,
+        height: 32,
         child: Material(
           color: active
               ? scheme.primary.withValues(alpha: 0.12)
               : scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(9),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onTap,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(icon, size: 18, color: foreground),
-                  const SizedBox(width: 6),
+                  Icon(icon, size: 14, color: foreground),
+                  const SizedBox(width: 4),
                   Flexible(
                     child: Text(
                       label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: 12,
                         color: foreground,
                         fontWeight: active
                             ? FontWeight.w600
@@ -1401,6 +1369,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
     searchHint: '搜索分类',
     options: _categoryCounts(),
     initial: _categoryFilter,
+    single: true,
     onApply: _applyCategoryFilter,
   );
 
@@ -1413,7 +1382,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
     onApply: _applyTagFilter,
   );
 
-  /// 搜索 + 多选 + 清除/应用 的草稿态面板，分类和标签共用一套。
+  /// 搜索 + 选择 + 清除/应用 的草稿态面板，分类（单选）和标签（多选）共用一套。
   Future<void> _showPickSheet({
     required String title,
     required IconData icon,
@@ -1421,11 +1390,14 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
     required Map<String, int> options,
     required Set<String> initial,
     required void Function(Iterable<String> keys) onApply,
+    bool single = false,
   }) async {
     final allKeys = options.keys.toSet();
-    final draft = initial.isEmpty
-        ? allKeys.toSet()
-        : initial.where(allKeys.contains).toSet();
+    final remembered = initial.where(allKeys.contains).toSet();
+    // 单选面板里空集就是「全部」，所以「全部」项是否选中直接看 draft 是否为空
+    final draft = single
+        ? (remembered.isEmpty ? <String>{} : {remembered.first})
+        : (remembered.isEmpty ? allKeys.toSet() : remembered);
     final searchController = TextEditingController();
     var query = '';
 
@@ -1531,10 +1503,15 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                               )
                             : ListView.builder(
                                 padding: const EdgeInsets.only(bottom: 8),
-                                itemCount: shown.length,
+                                itemCount: shown.length + (single ? 1 : 0),
                                 itemBuilder: (context, index) {
-                                  final entry = shown[index];
-                                  final selected = draft.contains(entry.key);
+                                  final isAll = single && index == 0;
+                                  final entry = isAll
+                                      ? null
+                                      : shown[index - (single ? 1 : 0)];
+                                  final selected = isAll
+                                      ? draft.isEmpty
+                                      : draft.contains(entry!.key);
                                   return Padding(
                                     padding: const EdgeInsets.fromLTRB(
                                       12,
@@ -1553,7 +1530,14 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                                       child: InkWell(
                                         onTap: () {
                                           setSheetState(() {
-                                            if (!draft.remove(entry.key)) {
+                                            if (single) {
+                                              draft.clear();
+                                              if (entry != null) {
+                                                draft.add(entry.key);
+                                              }
+                                              return;
+                                            }
+                                            if (!draft.remove(entry!.key)) {
                                               draft.add(entry.key);
                                             }
                                           });
@@ -1567,7 +1551,11 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                                             children: [
                                               Expanded(
                                                 child: Text(
-                                                  _optionLabel(entry.key),
+                                                  isAll
+                                                      ? '全部'
+                                                      : _optionLabel(
+                                                          entry!.key,
+                                                        ),
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
@@ -1635,6 +1623,13 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                                     ),
                                   ),
                                   onPressed: () {
+                                    if (single) {
+                                      Navigator.pop(
+                                        sheetContext,
+                                        draft.toSet(),
+                                      );
+                                      return;
+                                    }
                                     final coversAll =
                                         allKeys.isEmpty ||
                                         allKeys.every(draft.contains);
@@ -1727,77 +1722,6 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
           },
         );
       },
-    );
-  }
-
-  Widget _buildCategoryGroupHeader(_TaskCategoryGroup group) {
-    final collapsed = _collapsedCategories.contains(group.key);
-    var dl = 0;
-    var up = 0;
-    for (final task in group.tasks) {
-      dl += task.dlspeed;
-      up += task.upspeed;
-    }
-    return Padding(
-      padding: const EdgeInsets.only(top: 6, bottom: 2),
-      child: Material(
-        color: Theme.of(context).colorScheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: () => _toggleCategoryGroup(group.key),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              children: [
-                Icon(
-                  collapsed ? Icons.folder_outlined : Icons.folder_open,
-                  size: 18,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    group.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                Text(
-                  '${group.tasks.length}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                if (dl > 0) ...[
-                  const Icon(Icons.arrow_downward, size: 12),
-                  Text(
-                    FormatUtil.formatSpeed(dl),
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                  const SizedBox(width: 6),
-                ],
-                if (up > 0) ...[
-                  const Icon(Icons.arrow_upward, size: 12),
-                  Text(
-                    FormatUtil.formatSpeed(up),
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                  const SizedBox(width: 6),
-                ],
-                Icon(
-                  collapsed ? Icons.expand_more : Icons.expand_less,
-                  size: 18,
-                  color: Theme.of(context).colorScheme.outline,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 
@@ -2316,17 +2240,4 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
       ),
     );
   }
-}
-
-/// 任务列表按分类折叠用的分组
-class _TaskCategoryGroup {
-  const _TaskCategoryGroup({
-    required this.key,
-    required this.title,
-    required this.tasks,
-  });
-
-  final String key;
-  final String title;
-  final List<DownloadTask> tasks;
 }

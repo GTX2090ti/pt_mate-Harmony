@@ -7,8 +7,8 @@ import '../services/downloader/downloader_models.dart';
 import '../services/downloader/downloader_service.dart';
 import '../utils/format.dart';
 
-/// 任务连接节点（Peers）视图
-/// 对应 qBittorrent 客户端种子详情的"节点"标签，可嵌入 Tab 页
+/// 任务连接用户（Peers）视图
+/// 对应 qBittorrent 客户端种子详情的"用户"标签，可嵌入 Tab 页
 class TorrentPeersView extends StatefulWidget {
   final String taskHash;
   final DownloaderConfig config;
@@ -72,7 +72,7 @@ class _TorrentPeersViewState extends State<TorrentPeersView>
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        if (!silent) _error = '加载节点失败：$e';
+        if (!silent) _error = '加载用户失败：$e';
         _loading = false;
       });
     }
@@ -103,12 +103,12 @@ class _TorrentPeersViewState extends State<TorrentPeersView>
                   Icon(Icons.hub_outlined, size: 64, color: scheme.outline),
                   const SizedBox(height: 12),
                   Text(
-                    '没有节点',
+                    '没有用户',
                     style: TextStyle(fontSize: 16, color: scheme.outline),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '下载/做种中会显示已连接的节点',
+                    '下载/做种中会显示已连接的用户',
                     style: TextStyle(fontSize: 12, color: scheme.outline),
                   ),
                 ],
@@ -124,7 +124,7 @@ class _TorrentPeersViewState extends State<TorrentPeersView>
                   ),
                   color: scheme.surfaceContainerLow,
                   child: Text(
-                    '共 ${_peers.length} 个节点',
+                    '共 ${_peers.length} 个用户',
                     style: TextStyle(
                       fontSize: 12,
                       color: scheme.secondary,
