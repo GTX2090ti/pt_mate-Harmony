@@ -4,6 +4,7 @@
 - [开发指南](./DEVELOPMENT_GUIDE.md)
 - [网站配置指南](./SITE_CONFIGURATION_GUIDE.md)
 - [支持网站清单](./SUPPORTED_SITES.md)
+- [Git Hook 机制说明](./GIT_HOOKS.md)
 - API 文档
   - [Gazelle API](./api/Gazelle_API.md)
   - [ROUSI API V1](./api/ROUSI_API_V1.md)
