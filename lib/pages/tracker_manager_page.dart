@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/storage/storage_service.dart';
+import '../services/downloader/downloader_capabilities.dart';
 import '../services/downloader/downloader_config.dart';
 import '../services/downloader/downloader_models.dart';
 import '../services/downloader/downloader_service.dart';
@@ -76,20 +77,21 @@ class _TrackerManagerPageState extends State<TrackerManagerPage> {
       _config = config;
       _password = password;
 
-      if (config.type != DownloaderType.qbittorrent) {
-        setState(() {
-          _loading = false;
-          _error = 'Tracker 管理仅支持 qBittorrent 下载器（当前：${config.type.displayName}）';
-        });
-        return;
-      }
-
       final client = DownloaderService.instance.getClient(
         config: config,
         password: password!,
       );
-      final trackers = await client.getTrackers(widget.taskHash)
-          as List<TorrentTracker>;
+      // 详情四 Tab 走的是 qBittorrent 风格的增强接口，Deluge 也实现了同一套契约；
+      // 其余下载器（Transmission / ruTorrent）没有这些端点。
+      if (client is! TorrentManagementClient) {
+        setState(() {
+          _loading = false;
+          _error = '种子详情需要支持增强接口的下载器（当前：${config.type.displayName}）';
+        });
+        return;
+      }
+
+      final trackers = await client.getTrackers(widget.taskHash);
       if (!mounted) return;
       setState(() {
         _trackers = trackers;

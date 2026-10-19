@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'downloader_capabilities.dart';
 import 'downloader_config.dart';
 import 'downloader_models.dart';
 import 'downloader_service.dart';
@@ -11,8 +12,8 @@ import '../storage/storage_service.dart';
 
 /// 限速调度器
 ///
-/// 按时间段规则自动切换 qBittorrent 全局下载/上传限速。
-/// 本地实现（不依赖 qB 原生 scheduler），规则存储于 SharedPreferences。
+/// 按时间段规则自动切换全局下载/上传限速，支持任何具备 speedLimits 能力的下载器。
+/// 本地实现（不依赖下载器原生 scheduler），规则存储于 SharedPreferences。
 class SpeedSchedulerService {
   SpeedSchedulerService._();
 
@@ -98,7 +99,6 @@ class SpeedSchedulerService {
         orElse: () => configMaps.first,
       );
       final config = DownloaderConfig.fromJson(configMap);
-      if (config.type != DownloaderType.qbittorrent) return;
 
       final password = await StorageService.instance.loadDownloaderPassword(
         config.id,
@@ -129,7 +129,12 @@ class SpeedSchedulerService {
       final client = DownloaderService.instance.getClient(
         config: config,
         password: password!,
-      ) as dynamic;
+      );
+      // 限速调度需要能写全局下载/上传限速：qBittorrent 与 Deluge 都有该能力
+      if (client is! TorrentManagementClient ||
+          !client.capabilities.has(DownloaderFeature.speedLimits)) {
+        return;
+      }
 
       await client.setGlobalDownloadLimit(active.dlLimitKib);
       await client.setGlobalUploadLimit(active.upLimitKib);

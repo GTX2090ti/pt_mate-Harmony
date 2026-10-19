@@ -1,11 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../services/downloader/downloader_capabilities.dart';
 import '../services/downloader/downloader_config.dart';
 import '../services/downloader/downloader_models.dart';
 import '../services/downloader/downloader_service.dart';
 import '../utils/format.dart';
 import '../utils/notification_helper.dart';
+
+/// 「其他设置项」里一个开关的定义
+typedef _FlagDef = ({
+  String id,
+  String label,
+  String hint,
+  IconData icon,
+  bool toggleOnly,
+  DownloaderFeature feature,
+});
 
 /// 种子详情 · 概览
 ///
@@ -35,6 +46,9 @@ class _TorrentOverviewViewState extends State<TorrentOverviewView>
   TorrentProperties? _props;
   bool _loading = true;
   String? _error;
+
+  /// 当前下载器的能力集合，决定「其他设置项」里哪些开关真的能按
+  DownloaderCapabilities? _caps;
 
   /// 开关已点下、等服务端回包期间的期望值（key 为 [_flags] 的 id）
   final Map<String, bool> _pendingFlags = {};
@@ -71,6 +85,7 @@ class _TorrentOverviewViewState extends State<TorrentOverviewView>
       setState(() {
         _info = (raw is Map<String, dynamic>) ? raw : const {};
         _props = props;
+        _caps = client is TorrentManagementClient ? client.capabilities : null;
         _loading = false;
         _error = null;
       });
@@ -135,22 +150,14 @@ class _TorrentOverviewViewState extends State<TorrentOverviewView>
   // 开关写回
   // ============================================================
 
-  static const List<
-    ({
-      String id,
-      String label,
-      String hint,
-      IconData icon,
-      bool toggleOnly,
-    })
-  >
-  _flags = [
+  static const List<_FlagDef> _flags = [
     (
       id: 'forceStart',
       label: '强制开始',
       hint: '忽略队列与速度限制，立即上传/下载',
       icon: Icons.rocket_launch_outlined,
       toggleOnly: false,
+      feature: DownloaderFeature.forceStart,
     ),
     (
       id: 'sequential',
@@ -158,6 +165,7 @@ class _TorrentOverviewViewState extends State<TorrentOverviewView>
       hint: '按文件顺序下载分块',
       icon: Icons.format_list_numbered_rtl,
       toggleOnly: true,
+      feature: DownloaderFeature.sequentialDownload,
     ),
     (
       id: 'firstLast',
@@ -165,6 +173,7 @@ class _TorrentOverviewViewState extends State<TorrentOverviewView>
       hint: '优先下载每个文件的首尾块，便于边下边播',
       icon: Icons.compress,
       toggleOnly: true,
+      feature: DownloaderFeature.firstLastPiecePriority,
     ),
     (
       id: 'superSeeding',
@@ -172,6 +181,7 @@ class _TorrentOverviewViewState extends State<TorrentOverviewView>
       hint: '只做种已校验完成的文件，减少无效传输',
       icon: Icons.workspace_premium,
       toggleOnly: false,
+      feature: DownloaderFeature.superSeeding,
     ),
     (
       id: 'autoTmm',
@@ -179,20 +189,15 @@ class _TorrentOverviewViewState extends State<TorrentOverviewView>
       hint: '分类变化时跟随该分类的保存路径',
       icon: Icons.autorenew,
       toggleOnly: false,
+      feature: DownloaderFeature.autoManagement,
     ),
   ];
 
-  Future<void> _applyFlag(
-    ({
-      String id,
-      String label,
-      String hint,
-      IconData icon,
-      bool toggleOnly,
-    })
-    def,
-    bool value,
-  ) async {
+  /// 能力未就绪时先不画开关，避免点下去才发现不支持
+  List<_FlagDef> get _visibleFlags =>
+      _flags.where((f) => _caps?.has(f.feature) ?? false).toList(growable: false);
+
+  Future<void> _applyFlag(_FlagDef def, bool value) async {
     if (_flag(def.id) == value) return;
     setState(() => _pendingFlags[def.id] = value);
     try {
@@ -283,15 +288,17 @@ class _TorrentOverviewViewState extends State<TorrentOverviewView>
       child: ListView(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
         children: [
-          _sectionCard(
-            title: '其他设置项',
-            children: _flags
-                .map(
-                  (def) => _flagTile(def, scheme),
-                )
-                .toList(growable: false),
-          ),
-          const SizedBox(height: 12),
+          if (_visibleFlags.isNotEmpty) ...[
+            _sectionCard(
+              title: '其他设置项',
+              children: _visibleFlags
+                  .map(
+                    (def) => _flagTile(def, scheme),
+                  )
+                  .toList(growable: false),
+            ),
+            const SizedBox(height: 12),
+          ],
           _sectionCard(
             title: '基本信息',
             children: [
@@ -313,7 +320,11 @@ class _TorrentOverviewViewState extends State<TorrentOverviewView>
               _infoRow('做种 / 下载', _seedsAndLeeches()),
               _infoRow('保存路径', _str(['save_path', 'content_path'])),
               _infoRow('分类', category.isEmpty ? '未分类' : category),
-              _infoRow('标签', tags.isEmpty ? '无标签' : tags.replaceAll(',', '、')),
+              if (widget.config.type.supportsTags)
+                _infoRow(
+                  '标签',
+                  tags.isEmpty ? '无标签' : tags.replaceAll(',', '、'),
+                ),
               _infoRow('隐私', _flag('private') ? '私有种子' : '公开种子'),
             ],
           ),
@@ -383,17 +394,7 @@ class _TorrentOverviewViewState extends State<TorrentOverviewView>
     );
   }
 
-  Widget _flagTile(
-    ({
-      String id,
-      String label,
-      String hint,
-      IconData icon,
-      bool toggleOnly,
-    })
-    def,
-    ColorScheme scheme,
-  ) {
+  Widget _flagTile(_FlagDef def, ColorScheme scheme) {
     final busy = _pendingFlags.containsKey(def.id);
     return SwitchListTile(
       dense: true,

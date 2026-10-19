@@ -251,6 +251,9 @@ class _DownloaderSettingsPageState extends State<DownloaderSettingsPage> {
                           subtitle = '${c.host}:${c.port} · ${c.username}';
                         } else if (c is RuTorrentConfig) {
                           subtitle = '${c.host}:${c.port} · ${c.username}';
+                        } else if (c is DelugeConfig) {
+                          // WebUI 登录只认密码，用户名留空也要能认出这条配置
+                          subtitle = '${c.host}:${c.port}';
                         }
                         return ListTile(
                           dense: true,
@@ -420,23 +423,10 @@ class _DownloaderEditorDialogState extends State<_DownloaderEditorDialog> {
       _nameCtrl.text = e.name;
       _selectedType = e.type;
       _allowSelfSignedCert = e.allowSelfSignedCert;
-
-      if (e is QbittorrentConfig) {
-        _hostCtrl.text = e.host;
-        _portCtrl.text = e.port.toString();
-        _userCtrl.text = e.username;
-        _useLocalRelay = e.useLocalRelay;
-      } else if (e is TransmissionConfig) {
-        _hostCtrl.text = e.host;
-        _portCtrl.text = e.port.toString();
-        _userCtrl.text = e.username;
-        _useLocalRelay = e.useLocalRelay;
-      } else if (e is RuTorrentConfig) {
-        _hostCtrl.text = e.host;
-        _portCtrl.text = e.port.toString();
-        _userCtrl.text = e.username;
-        _useLocalRelay = e.useLocalRelay;
-      }
+      _hostCtrl.text = e.host;
+      _portCtrl.text = e.port.toString();
+      _userCtrl.text = e.username;
+      _useLocalRelay = e.useLocalRelay;
     } else {
       // 新建配置时，如果是 Transmission 或 ruTorrent 类型，默认开启本地中转
       if (_selectedType == DownloaderType.transmission ||
@@ -462,8 +452,16 @@ class _DownloaderEditorDialogState extends State<_DownloaderEditorDialog> {
     final port = FormatUtil.parseInt(_portCtrl.text.trim());
     final user = _userCtrl.text.trim();
     final pwd = _pwdCtrl.text.trim();
-    if (name.isEmpty || host.isEmpty || port == null || user.isEmpty) {
-      NotificationHelper.showInfo(context, '请完整填写名称、主机、端口、用户名');
+    // Deluge 的 WebUI 登录只认密码（auth.login 仅接收密码），用户名可以留空
+    final userRequired = _selectedType != DownloaderType.deluge;
+    if (name.isEmpty ||
+        host.isEmpty ||
+        port == null ||
+        (userRequired && user.isEmpty)) {
+      NotificationHelper.showInfo(
+        context,
+        userRequired ? '请完整填写名称、主机、端口、用户名' : '请完整填写名称、主机、端口',
+      );
       return;
     }
     final id =
@@ -530,12 +528,12 @@ class _DownloaderEditorDialogState extends State<_DownloaderEditorDialog> {
     if (name.isEmpty ||
         host.isEmpty ||
         port == null ||
-        user.isEmpty ||
+        (_selectedType != DownloaderType.deluge && user.isEmpty) ||
         (password?.isEmpty ?? true)) {
       if (!mounted) return;
       setState(() {
         _testOk = false;
-        _testMsg = '请完整填写名称、主机、端口、用户名和密码后再测试';
+        _testMsg = '请完整填写名称、主机、端口、密码后再测试';
       });
       return;
     }
@@ -668,18 +666,23 @@ class _DownloaderEditorDialogState extends State<_DownloaderEditorDialog> {
                     const SizedBox(height: 16),
                     TextField(
                       controller: _portCtrl,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: '端口',
-                        border: OutlineInputBorder(),
+                        border: const OutlineInputBorder(),
+                        helperText:
+                            '默认端口：${DownloaderUtils.getDefaultPort(_selectedType)}',
                       ),
                       keyboardType: TextInputType.number,
                     ),
                     const SizedBox(height: 16),
                     TextField(
                       controller: _userCtrl,
-                      decoration: const InputDecoration(
-                        labelText: '用户名',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText:
+                            _selectedType == DownloaderType.deluge
+                                ? '用户名（Deluge 只验证密码，可留空）'
+                                : '用户名',
+                        border: const OutlineInputBorder(),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -711,12 +714,9 @@ class _DownloaderEditorDialogState extends State<_DownloaderEditorDialog> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  _selectedType == DownloaderType.transmission
-                                      ? 'Transmission 必须启用本地中转（种子文件需要先下载到本地）'
-                                      : _selectedType ==
-                                            DownloaderType.rutorrent
-                                      ? 'ruTorrent 必须启用本地中转（种子文件需要先下载到本地）'
-                                      : '启用后先下载种子文件到本地，再提交给下载器',
+                                  DownloaderUtils.getLocalRelayDescription(
+                                    _selectedType,
+                                  ),
                                   style: Theme.of(context).textTheme.bodySmall
                                       ?.copyWith(color: Colors.grey.shade600),
                                 ),
@@ -993,6 +993,8 @@ class _QbCategoriesTagsDialogState extends State<_QbCategoriesTagsDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // Deluge / ruTorrent 只有 label 体系，没有并列的标签，标签 Tab 直接不出现
+    final showTags = widget.config.type.supportsTags;
     return AlertDialog(
       title: Text('分类与标签 - ${widget.config.name}'),
       content: SizedBox(
@@ -1015,18 +1017,21 @@ class _QbCategoriesTagsDialogState extends State<_QbCategoriesTagsDialog> {
                 ),
               )
             : DefaultTabController(
-                length: 2,
+                length: showTags ? 2 : 1,
                 child: Column(
                   children: [
-                    const TabBar(
+                    TabBar(
                       tabs: [
-                        Tab(text: '分类'),
-                        Tab(text: '标签'),
+                        const Tab(text: '分类'),
+                        if (showTags) const Tab(text: '标签'),
                       ],
                     ),
                     Expanded(
                       child: TabBarView(
-                        children: [_buildList(_categories), _buildList(_tags)],
+                        children: [
+                          _buildList(_categories),
+                          if (showTags) _buildList(_tags),
+                        ],
                       ),
                     ),
                   ],

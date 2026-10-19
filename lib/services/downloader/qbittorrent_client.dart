@@ -12,6 +12,7 @@ import '../../models/app_models.dart';
 import '../network/timeout_retry.dart';
 import '../../utils/format.dart';
 
+import 'downloader_capabilities.dart';
 import 'downloader_client.dart';
 import 'downloader_config.dart';
 import 'downloader_models.dart';
@@ -21,7 +22,7 @@ import '../network/proxy_service.dart';
 /// qBittorrent下载器客户端实现
 class QbittorrentClient
     with TorrentFileDownloaderMixin
-    implements DownloaderClient {
+    implements DownloaderClient, TorrentManagementClient {
   final QbittorrentConfig config;
   final String password;
 
@@ -75,6 +76,9 @@ class QbittorrentClient
 
   /// 获取基础URL
   String get _baseUrl => _buildBase(config);
+
+  @override
+  DownloaderCapabilities get capabilities => DownloaderCapabilities.qbittorrent;
 
   /// 构建基础URL，处理各种格式的主机地址
   String _buildBase(QbittorrentConfig c) {
@@ -529,6 +533,7 @@ class QbittorrentClient
   }
 
   /// 获取分类明细（名称 -> 保存路径），来自 GET /torrents/categories
+  @override
   Future<Map<String, String>> getCategoryDetails() async {
     final response = await _request('GET', '/torrents/categories');
     final data = response.data;
@@ -728,6 +733,7 @@ class QbittorrentClient
   // ============================================================
 
   /// 获取指定任务的 Tracker 列表
+  @override
   Future<List<TorrentTracker>> getTrackers(String hash) async {
     final response = await _request(
       'GET',
@@ -745,6 +751,7 @@ class QbittorrentClient
   }
 
   /// 批量重新宣告（reannounce）Tracker
+  @override
   Future<void> reannounceTorrents(List<String> hashes) async {
     await _request('POST', '/torrents/reannounce', body: {
       'hashes': hashes.join('|'),
@@ -752,6 +759,7 @@ class QbittorrentClient
   }
 
   /// 添加 Tracker 到指定任务
+  @override
   Future<void> addTracker(String hash, String trackerUrl) async {
     await _request('POST', '/torrents/addTrackers', body: {
       'hash': hash,
@@ -760,6 +768,7 @@ class QbittorrentClient
   }
 
   /// 编辑 Tracker（替换原 URL）
+  @override
   Future<void> editTracker(
     String hash,
     String originalUrl,
@@ -773,6 +782,7 @@ class QbittorrentClient
   }
 
   /// 删除 Tracker
+  @override
   Future<void> removeTrackers(String hash, List<String> urls) async {
     await _request('POST', '/torrents/removeTrackers', body: {
       'hash': hash,
@@ -785,6 +795,7 @@ class QbittorrentClient
   // ============================================================
 
   /// 获取任务详细属性（做种时间、分享率等）
+  @override
   Future<TorrentProperties> getTorrentProperties(String hash) async {
     final response = await _request(
       'GET',
@@ -799,6 +810,7 @@ class QbittorrentClient
   /// 概览页需要 `force_start`、`seq_dl`、`f_l_piece_prio`、`super_seeding`、
   /// `auto_tmm` 等 [DownloadTask] 未覆盖的字段，各 qB 版本字段名还有别名差异，
   /// 因此这里直接透传原始 JSON，由页面按别名取值。
+  @override
   Future<Map<String, dynamic>?> getTorrentInfoRaw(String hash) async {
     final response = await _request('GET', '/torrents/info', body: {
       'hashes': hash,
@@ -814,6 +826,7 @@ class QbittorrentClient
   // ============================================================
 
   /// 强制开始（忽略队列与速度限制）
+  @override
   Future<void> setForceStart(List<String> hashes, bool value) async {
     await _request('POST', '/torrents/setForceStart', body: {
       'hashes': hashes.join('|'),
@@ -822,6 +835,7 @@ class QbittorrentClient
   }
 
   /// 超级做种（只做种已校验的分块）
+  @override
   Future<void> setSuperSeeding(List<String> hashes, bool value) async {
     await _request('POST', '/torrents/setSuperSeeding', body: {
       'hashes': hashes.join('|'),
@@ -830,6 +844,7 @@ class QbittorrentClient
   }
 
   /// 自动种子管理（随分类改变保存路径）。注意这个接口的开关参数叫 enable。
+  @override
   Future<void> setAutoManagement(List<String> hashes, bool value) async {
     await _request('POST', '/torrents/setAutoManagement', body: {
       'hashes': hashes.join('|'),
@@ -838,6 +853,7 @@ class QbittorrentClient
   }
 
   /// 顺序下载开关。qB WebAPI 只有 toggle，没有 set。
+  @override
   Future<void> toggleSequentialDownload(List<String> hashes) async {
     await _request('POST', '/torrents/toggleSequentialDownload', body: {
       'hashes': hashes.join('|'),
@@ -845,6 +861,7 @@ class QbittorrentClient
   }
 
   /// 首尾分块优先开关。qB WebAPI 只有 toggle，没有 set。
+  @override
   Future<void> toggleFirstLastPiecePrio(List<String> hashes) async {
     await _request('POST', '/torrents/toggleFirstLastPiecePrio', body: {
       'hashes': hashes.join('|'),
@@ -856,6 +873,7 @@ class QbittorrentClient
   // ============================================================
 
   /// 队列最前（topPrio）
+  @override
   Future<void> topPriority(List<String> hashes) async {
     await _request('POST', '/torrents/topPrio', body: {
       'hashes': hashes.join('|'),
@@ -863,6 +881,7 @@ class QbittorrentClient
   }
 
   /// 队列最后（bottomPrio）
+  @override
   Future<void> bottomPriority(List<String> hashes) async {
     await _request('POST', '/torrents/bottomPrio', body: {
       'hashes': hashes.join('|'),
@@ -870,6 +889,7 @@ class QbittorrentClient
   }
 
   /// 队列上移（increasePrio）
+  @override
   Future<void> increasePriority(List<String> hashes) async {
     await _request('POST', '/torrents/increasePrio', body: {
       'hashes': hashes.join('|'),
@@ -877,6 +897,7 @@ class QbittorrentClient
   }
 
   /// 队列下移（decreasePrio）
+  @override
   Future<void> decreasePriority(List<String> hashes) async {
     await _request('POST', '/torrents/decreasePrio', body: {
       'hashes': hashes.join('|'),
@@ -891,6 +912,7 @@ class QbittorrentClient
   ///
   /// 注意分隔符：`hashes` 用竖线，`tags` 用逗号（qB 侧 `split(u',')`，官方 WebUI
   /// 甚至禁止标签名里出现逗号），传竖线会建出一个叫「a|b」的标签。
+  @override
   Future<void> addTags(List<String> hashes, List<String> tags) async {
     await _request('POST', '/torrents/addTags', body: {
       'hashes': hashes.join('|'),
@@ -899,6 +921,7 @@ class QbittorrentClient
   }
 
   /// 批量移除标签
+  @override
   Future<void> removeTags(List<String> hashes, List<String> tags) async {
     await _request('POST', '/torrents/removeTags', body: {
       'hashes': hashes.join('|'),
@@ -907,6 +930,7 @@ class QbittorrentClient
   }
 
   /// 新建标签（可一次多个）
+  @override
   Future<void> createTags(List<String> tags) async {
     if (tags.isEmpty) return;
     await _request('POST', '/torrents/createTags', body: {
@@ -915,6 +939,7 @@ class QbittorrentClient
   }
 
   /// 删除标签（不影响种子本身）
+  @override
   Future<void> deleteTags(List<String> tags) async {
     if (tags.isEmpty) return;
     await _request('POST', '/torrents/deleteTags', body: {
@@ -923,6 +948,7 @@ class QbittorrentClient
   }
 
   /// 批量设置分类
+  @override
   Future<void> setCategory(List<String> hashes, String category) async {
     await _request('POST', '/torrents/setCategory', body: {
       'hashes': hashes.join('|'),
@@ -931,6 +957,7 @@ class QbittorrentClient
   }
 
   /// 批量重新校验（recheck）
+  @override
   Future<void> recheckTorrents(List<String> hashes) async {
     await _request('POST', '/torrents/recheck', body: {
       'hashes': hashes.join('|'),
@@ -938,6 +965,7 @@ class QbittorrentClient
   }
 
   /// 新增分类
+  @override
   Future<void> createCategory(String category,
       {String? savePath}) async {
     await _request('POST', '/torrents/createCategory', body: {
@@ -947,6 +975,7 @@ class QbittorrentClient
   }
 
   /// 删除分类（不会删除种子）
+  @override
   Future<void> deleteCategory(String category) async {
     await _request('POST', '/torrents/removeCategories', body: {
       'categories': category,
@@ -958,6 +987,7 @@ class QbittorrentClient
   /// qBittorrent 的 WebAPI 从未支持重命名分类（`editCategory` 只接受
   /// `category` + `savePath`，4.6/5.0 还强制要求 `savePath`），
   /// 因此这里只做保存路径的修改。
+  @override
   Future<void> setCategorySavePath(String category, String savePath) async {
     await _request('POST', '/torrents/editCategory', body: {
       'category': category,
@@ -967,6 +997,7 @@ class QbittorrentClient
 
   /// 获取任务的连接节点（Peers）列表
   /// 来自 GET /sync/torrentPeers
+  @override
   Future<List<TorrentPeer>> getTorrentPeers(String hash) async {
     final response = await _request('GET', '/sync/torrentPeers', body: {
       'hash': hash,
@@ -990,6 +1021,7 @@ class QbittorrentClient
   }
 
   /// 获取任务的文件列表（对应 GET /torrents/files）
+  @override
   Future<List<TorrentFile>> getTorrentFiles(String hash) async {
     final response = await _request('GET', '/torrents/files', body: {
       'hash': hash,
@@ -1008,6 +1040,7 @@ class QbittorrentClient
   /// 设置文件优先级（对应 POST /torrents/filePrio）
   /// priority 取值见 [FilePriority]：0=跳过 1=普通 6=高 7=最高
   /// [ids] 为文件 index 列表，qB 用竖线分隔（逗号会被判成非法整数）
+  @override
   Future<void> setFilePriority({
     required String hash,
     required List<int> ids,
@@ -1026,6 +1059,7 @@ class QbittorrentClient
   // ============================================================
 
   /// 获取全局偏好（限速配置）
+  @override
   Future<GlobalPreferences> getGlobalPreferences() async {
     final response = await _request('GET', '/app/preferences');
     final data = response.data as Map<String, dynamic>;
@@ -1033,6 +1067,7 @@ class QbittorrentClient
   }
 
   /// 获取原始偏好（键为 qB 的 dottree 路径，如 `dl_limit`、`queueing`）
+  @override
   Future<Map<String, dynamic>> getPreferencesRaw() async {
     final response = await _request('GET', '/app/preferences');
     final data = response.data;
@@ -1040,6 +1075,7 @@ class QbittorrentClient
   }
 
   /// 写入偏好。qB 的 setPreferences 接收增量 JSON，未出现的键保持原值
+  @override
   Future<void> setPreferences(Map<String, dynamic> deltas) async {
     if (deltas.isEmpty) return;
     await _request('POST', '/app/setPreferences', body: {
@@ -1048,6 +1084,7 @@ class QbittorrentClient
   }
 
   /// 设置全局下载限速（KiB/s，-1 表示不限速）
+  @override
   Future<void> setGlobalDownloadLimit(int limitKib) async {
     await _request('POST', '/transfer/setDownloadLimit', body: {
       'limit': limitKib.toString(),
@@ -1055,6 +1092,7 @@ class QbittorrentClient
   }
 
   /// 设置全局上传限速（KiB/s，-1 表示不限速）
+  @override
   Future<void> setGlobalUploadLimit(int limitKib) async {
     await _request('POST', '/transfer/setUploadLimit', body: {
       'limit': limitKib.toString(),
@@ -1062,6 +1100,7 @@ class QbittorrentClient
   }
 
   /// 切换限速模式（0=全局, 1=备选, 2=调度）
+  @override
   Future<void> setSpeedLimitsMode(int mode) async {
     await _request('POST', '/transfer/setSpeedLimitsMode', body: {
       'mode': mode.toString(),

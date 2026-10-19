@@ -256,6 +256,17 @@ class _TorrentDownloadDialogState extends State<TorrentDownloadDialog> {
     });
   }
 
+  /// 下拉项文案：WebUI 直连型下载器带上地址，避免同名配置分不清
+  String _clientLabel(DownloaderConfig client) {
+    final showAddress = client is QbittorrentConfig || client is DelugeConfig;
+    return showAddress
+        ? '${client.name} (${client.host}:${client.port})'
+        : client.name;
+  }
+
+  /// Deluge / ruTorrent 只有 label，没有与分类并列的标签体系
+  bool get _supportsTags => _selectedClient?.type.supportsTags ?? false;
+
   @override
   Widget build(BuildContext context) {
     final isBatchMode = widget.itemCount != null;
@@ -526,9 +537,7 @@ class _TorrentDownloadDialogState extends State<TorrentDownloadDialog> {
                 return SizedBox(
                   width: maxWidth,
                   child: Text(
-                    client is QbittorrentConfig
-                        ? '${client.name} (${client.host}:${client.port})'
-                        : client.name,
+                    _clientLabel(client),
                     overflow: TextOverflow.ellipsis,
                     maxLines: 1,
                   ),
@@ -550,9 +559,7 @@ class _TorrentDownloadDialogState extends State<TorrentDownloadDialog> {
                     return SizedBox(
                       width: maxWidth,
                       child: Text(
-                        client is QbittorrentConfig
-                            ? '${client.name} (${client.host}:${client.port})'
-                            : client.name,
+                        _clientLabel(client),
                         overflow: TextOverflow.ellipsis,
                         maxLines: 1,
                       ),
@@ -626,32 +633,34 @@ class _TorrentDownloadDialogState extends State<TorrentDownloadDialog> {
           ),
           const SizedBox(height: 16),
 
-          // 标签选择
-          Text('标签（可选）', style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 8),
-          if (_tags.isNotEmpty)
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: _tags.map((tag) {
-                final isSelected = _selectedTags.contains(tag);
-                return FilterChip(
-                  label: Text(tag),
-                  selected: isSelected,
-                  onSelected: (selected) {
-                    setState(() {
-                      if (selected) {
-                        _selectedTags.add(tag);
-                      } else {
-                        _selectedTags.remove(tag);
-                      }
-                    });
-                  },
-                );
-              }).toList(),
-            )
-          else
-            const Text('暂无可用标签', style: TextStyle(color: Colors.grey)),
+          // 标签选择：Deluge / ruTorrent 只有 label，没有与分类并列的标签体系
+          if (_supportsTags) ...[
+            Text('标签（可选）', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            if (_tags.isNotEmpty)
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: _tags.map((tag) {
+                  final isSelected = _selectedTags.contains(tag);
+                  return FilterChip(
+                    label: Text(tag),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      setState(() {
+                        if (selected) {
+                          _selectedTags.add(tag);
+                        } else {
+                          _selectedTags.remove(tag);
+                        }
+                      });
+                    },
+                  );
+                }).toList(),
+              )
+            else
+              const Text('暂无可用标签', style: TextStyle(color: Colors.grey)),
+          ],
           // 保存路径
           const SizedBox(height: 16),
           Text('保存路径（可选）', style: Theme.of(context).textTheme.titleSmall),

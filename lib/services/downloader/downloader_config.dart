@@ -38,6 +38,8 @@ abstract class DownloaderConfig {
         return TransmissionConfig.fromJson(json);
       case DownloaderType.rutorrent:
         return RuTorrentConfig.fromJson(json);
+      case DownloaderType.deluge:
+        return DelugeConfig.fromJson(json);
     }
   }
 
@@ -346,6 +348,81 @@ class RuTorrentConfig extends DownloaderConfig {
     String? version,
   }) {
     return RuTorrentConfig(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      host: host ?? this.host,
+      port: port ?? this.port,
+      username: username ?? this.username,
+      password: password ?? this.password,
+      useLocalRelay: useLocalRelay ?? this.useLocalRelay,
+      allowSelfSignedCert: allowSelfSignedCert ?? this.allowSelfSignedCert,
+      version: version ?? this.version,
+    );
+  }
+}
+
+/// Deluge 下载器配置
+///
+/// Deluge WebUI 的登录只有密码一项（`auth.login` 仅接收密码），`username`
+/// 保留是为了与其它下载器共用配置表单与存储结构，认证时不参与请求。
+class DelugeConfig extends DownloaderConfig {
+  const DelugeConfig({
+    required super.id,
+    required super.name,
+    required super.host,
+    required super.port,
+    required super.username,
+    required super.password,
+    super.useLocalRelay = false,
+    super.allowSelfSignedCert = false,
+    super.version,
+  }) : super(type: DownloaderType.deluge);
+
+  @override
+  int get defaultPort => 8112;
+
+  /// 从JSON创建配置
+  factory DelugeConfig.fromJson(Map<String, dynamic> json) {
+    return DownloaderConfig._createFromConfig(
+      json,
+      ({
+        required String id,
+        required String name,
+        required String host,
+        required int port,
+        required String username,
+        required String password,
+        bool useLocalRelay = false,
+        bool allowSelfSignedCert = false,
+        String? version,
+      }) => DelugeConfig(
+        id: id,
+        name: name,
+        host: host,
+        port: port,
+        username: username,
+        password: password,
+        useLocalRelay: useLocalRelay,
+        allowSelfSignedCert: allowSelfSignedCert,
+        version: version,
+      ),
+      8112,
+    );
+  }
+
+  @override
+  DelugeConfig copyWith({
+    String? id,
+    String? name,
+    String? host,
+    int? port,
+    String? username,
+    String? password,
+    bool? useLocalRelay,
+    bool? allowSelfSignedCert,
+    String? version,
+  }) {
+    return DelugeConfig(
       id: id ?? this.id,
       name: name ?? this.name,
       host: host ?? this.host,

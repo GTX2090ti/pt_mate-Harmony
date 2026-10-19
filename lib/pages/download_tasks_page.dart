@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:dio/dio.dart';
 import '../services/storage/storage_service.dart';
+import '../services/downloader/downloader_capabilities.dart';
 import '../services/downloader/downloader_config.dart';
 import '../services/downloader/downloader_service.dart';
 import '../services/downloader/downloader_models.dart';
-import '../services/downloader/qbittorrent_client.dart';
 import '../services/downloader/seed_health_monitor.dart';
 import '../services/downloader/disk_guard_service.dart';
 import '../utils/format.dart';
@@ -204,6 +204,9 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
     }
   }
 
+  /// Deluge / ruTorrent 只有 label，没有与分类并列的标签体系，相关入口整段隐藏
+  bool get _supportsTags => _downloaderConfig?.type.supportsTags ?? false;
+
   // 获取或创建 client 实例
   dynamic _getClient() {
     if (_downloaderConfig == null || _password == null) {
@@ -332,8 +335,8 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                   _bulkAddTags();
                 }
               },
-              itemBuilder: (context) => const [
-                PopupMenuItem<String>(
+              itemBuilder: (context) => [
+                const PopupMenuItem<String>(
                   value: 'category',
                   child: ListTile(
                     dense: true,
@@ -342,15 +345,16 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                     title: Text('批量修改分类'),
                   ),
                 ),
-                PopupMenuItem<String>(
-                  value: 'tags',
-                  child: ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.label_outline),
-                    title: Text('批量添加标签'),
+                if (_supportsTags)
+                  const PopupMenuItem<String>(
+                    value: 'tags',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.label_outline),
+                      title: Text('批量添加标签'),
+                    ),
                   ),
-                ),
               ],
             ),
             IconButton(
@@ -754,15 +758,20 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
     }
   }
 
-  /// qBittorrent 没有「把任务设成第 N 档优先级」的接口（4.6/5.0/master 都查过），
-  /// 队列只能相对移动或置顶/置底，所以这里走那四个真实存在的端点。
+  /// qBittorrent 与 Deluge 都没有「把任务设成第 N 档优先级」的接口（4.6/5.0/master
+  /// 都查过），队列只能相对移动或置顶/置底，所以这里走那四个真实存在的端点。
   Future<void> _queueAction(
     String label,
-    Future<void> Function(QbittorrentClient client, List<String> hashes) action,
+    Future<void> Function(
+      TorrentManagementClient client,
+      List<String> hashes,
+    )
+    action,
   ) async {
     final client = _getClient();
-    if (client is! QbittorrentClient) {
-      NotificationHelper.showError(context, '队列调整需要 qBittorrent 下载器');
+    if (client is! TorrentManagementClient ||
+        !client.capabilities.has(DownloaderFeature.queue)) {
+      NotificationHelper.showError(context, '队列调整需要支持队列管理的下载器');
       return;
     }
     final hashes = _selectedHashes.toList();
@@ -843,14 +852,15 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                 _bulkSetCategory();
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.label_outline),
-              title: const Text('批量添加标签'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _bulkAddTags();
-              },
-            ),
+            if (_supportsTags)
+              ListTile(
+                leading: const Icon(Icons.label_outline),
+                title: const Text('批量添加标签'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _bulkAddTags();
+                },
+              ),
             const Divider(height: 1),
             ListTile(
               leading: const Icon(Icons.replay),
@@ -1001,13 +1011,15 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                 active: _categoryFilter.isNotEmpty,
                 onTap: _showCategorySheet,
               ),
-              const SizedBox(width: 6),
-              _buildQuickChip(
-                icon: Icons.label_outlined,
-                label: _filterChipLabel(_tagFilter, '标签'),
-                active: _tagFilter.isNotEmpty,
-                onTap: _showTagSheet,
-              ),
+              if (_supportsTags) ...[
+                const SizedBox(width: 6),
+                _buildQuickChip(
+                  icon: Icons.label_outlined,
+                  label: _filterChipLabel(_tagFilter, '标签'),
+                  active: _tagFilter.isNotEmpty,
+                  onTap: _showTagSheet,
+                ),
+              ],
               const SizedBox(width: 6),
               _buildQuickChip(
                 icon: _sortAscending

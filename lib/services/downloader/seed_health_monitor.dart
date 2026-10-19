@@ -96,7 +96,11 @@ class SeedHealthMonitor {
         orElse: () => configMaps.first,
       );
       final downloaderConfig = DownloaderConfig.fromJson(configMap);
-      if (downloaderConfig.type != DownloaderType.qbittorrent) return;
+      // 健康度只看 progress / timeActive / ratio，这两个下载器都能给出
+      if (downloaderConfig.type != DownloaderType.qbittorrent &&
+          downloaderConfig.type != DownloaderType.deluge) {
+        return;
+      }
 
       final password = await StorageService.instance.loadDownloaderPassword(
         downloaderConfig.id,

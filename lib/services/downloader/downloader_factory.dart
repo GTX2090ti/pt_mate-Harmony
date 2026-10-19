@@ -1,6 +1,7 @@
 import 'downloader_client.dart';
 import 'downloader_config.dart';
 import 'downloader_models.dart';
+import 'deluge_client.dart';
 import 'qbittorrent_client.dart';
 import 'transmission_client.dart';
 import 'rutorrent_client.dart';
@@ -101,6 +102,18 @@ class DownloaderFactory {
           );
         } else {
           throw ArgumentError('Invalid config type for ruTorrent: ${config.runtimeType}');
+        }
+      case DownloaderType.deluge:
+        if (config is DelugeConfig) {
+          return DelugeClient(
+            config: config,
+            password: password,
+            onConfigUpdated: onConfigUpdated != null
+              ? (updatedConfig) => onConfigUpdated(updatedConfig)
+              : null,
+          );
+        } else {
+          throw ArgumentError('Invalid config type for Deluge: ${config.runtimeType}');
         }
     }
   }

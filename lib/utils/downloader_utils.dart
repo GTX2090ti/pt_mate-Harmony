@@ -31,8 +31,8 @@ class DownloaderUtils {
       );
     }
 
-    // 如果将来添加新的下载器类型，这里会处理
-    throw UnimplementedError('未实现的下载器类型: ${type.name}');
+    // 没有随包图标的类型（如 Deluge）用通用图标，避免整页因为一个图标崩掉
+    return Icon(Icons.dns_outlined, size: iconSize);
   }
 
   /// 根据下载器类型获取图标
@@ -48,6 +48,8 @@ class DownloaderUtils {
       return 9091;
     } else if (type == DownloaderType.rutorrent) {
       return 80;
+    } else if (type == DownloaderType.deluge) {
+      return 8112;
     }
 
     // 如果将来添加新的下载器类型，这里会处理
@@ -63,6 +65,9 @@ class DownloaderUtils {
         return false;
       case DownloaderType.rutorrent:
         return true;
+      case DownloaderType.deluge:
+        // core.add_torrent_url 可用时能直接下发链接；不可用时用户可自行开启中转
+        return false;
     }
   }
 
@@ -70,6 +75,9 @@ class DownloaderUtils {
   static String getLocalRelayDescription(DownloaderType type) {
     if (requiresLocalRelay(type)) {
       return '${type.displayName} 必须启用本地中转（种子文件需要先下载到本地）';
+    }
+    if (type == DownloaderType.deluge) {
+      return 'Deluge 能直接接收种子链接，但下发时不会带上站点 Cookie；PT 站点建议启用本地中转';
     }
     return '启用后，种子文件会先下载到本地，然后再发送给下载器';
   }

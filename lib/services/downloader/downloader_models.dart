@@ -8,7 +8,8 @@ import '../../utils/format.dart';
 enum DownloaderType {
   qbittorrent('qbittorrent', 'qBittorrent'),
   transmission('transmission', 'Transmission'),
-  rutorrent('rutorrent', 'ruTorrent');
+  rutorrent('rutorrent', 'ruTorrent'),
+  deluge('deluge', 'Deluge');
 
   const DownloaderType(this.value, this.displayName);
 
@@ -16,9 +17,11 @@ enum DownloaderType {
   final String displayName;
 
   /// 是否支持独立于分类的任务标签。
+  ///
+  /// Deluge 只有 label（对应本应用的「分类」），没有与分类并列的标签体系。
   bool get supportsTags => switch (this) {
     DownloaderType.qbittorrent || DownloaderType.transmission => true,
-    DownloaderType.rutorrent => false,
+    DownloaderType.rutorrent || DownloaderType.deluge => false,
   };
 
   static DownloaderType fromString(String value) {

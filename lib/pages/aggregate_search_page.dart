@@ -1129,8 +1129,9 @@ class AggregateSearchViewState extends State<AggregateSearchView> {
     SiteConfig siteConfig,
   ) async {
     try {
-      // [专业增强] 下载前磁盘检查（仅 qBittorrent）
-      if (clientConfig.type == DownloaderType.qbittorrent) {
+      // [专业增强] 下载前磁盘检查（qBittorrent / Deluge 能给出磁盘剩余空间）
+      if (clientConfig.type == DownloaderType.qbittorrent ||
+          clientConfig.type == DownloaderType.deluge) {
         final diskConfig = await DiskGuardService.instance.loadConfig();
         final client = DownloaderService.instance.getClient(
           config: clientConfig,
