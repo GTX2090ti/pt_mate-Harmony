@@ -343,7 +343,7 @@ class DownloaderService {
     await _managementClient(config, password).setCategory(hashes, category);
   }
 
-  /// 获取原始偏好（仅 qBittorrent：偏好键空间是 qB 的 dottree 路径）
+  /// 获取下载器自身的原始偏好（qB 走 `/app/preferences`，Deluge 走 `core.get_config`）
   Future<Map<String, dynamic>> getPreferences({
     required DownloaderConfig config,
     required String password,
@@ -351,12 +351,12 @@ class DownloaderService {
     return _managementClient(
       config,
       password,
-      feature: DownloaderFeature.qbPreferenceSchema,
+      feature: DownloaderFeature.serverPreferences,
       featureLabel: '服务器设置',
     ).getPreferencesRaw();
   }
 
-  /// 写入偏好增量（仅 qBittorrent）
+  /// 写入偏好增量（键名以目标下载器实机返回的为准）
   Future<void> setPreferences({
     required DownloaderConfig config,
     required String password,
@@ -365,7 +365,7 @@ class DownloaderService {
     await _managementClient(
       config,
       password,
-      feature: DownloaderFeature.qbPreferenceSchema,
+      feature: DownloaderFeature.serverPreferences,
       featureLabel: '服务器设置',
     ).setPreferences(deltas);
   }

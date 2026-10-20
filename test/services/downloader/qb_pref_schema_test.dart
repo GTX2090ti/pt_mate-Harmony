@@ -1,8 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pt_mate/services/downloader/pref_schema.dart';
 import 'package:pt_mate/services/downloader/qb_pref_schema.dart';
 
 void main() {
-  QbPrefGroup groupById(String id) =>
+  PrefGroup groupById(String id) =>
       qbPrefGroups.firstWhere((g) => g.id == id);
 
   group('qb_pref_schema', () {
@@ -66,10 +67,10 @@ void main() {
           .firstWhere((r) => r.key == 'dl_limit');
       final ratio = resolveGroupFields(groupById('bittorrent'), prefs)
           .firstWhere((r) => r.key == 'max_ratio');
-      final enc = QbPrefField(
+      final enc = PrefField(
         keys: const ['encryption'],
         label: '加密',
-        kind: QbPrefKind.stringEnum,
+        kind: PrefKind.stringEnum,
       );
 
       expect(prefValueFromInput(dl, '1024'), 1048576);
@@ -79,18 +80,18 @@ void main() {
       expect(prefValueToText(dl), '-1', reason: '-1 保持不限速');
       expect(
         prefValueFromInput(
-          ResolvedQbPrefField(enc, 'encryption', 'enabled'),
+          ResolvedPrefField(enc, 'encryption', 'enabled'),
           'preferEncryption',
         ),
         'preferEncryption',
       );
       expect(
         prefValueFromInput(
-          ResolvedQbPrefField(
-            QbPrefField(
+          ResolvedPrefField(
+            PrefField(
               keys: const ['add_trackers'],
               label: 'trackers',
-              kind: QbPrefKind.stringList,
+              kind: PrefKind.stringList,
             ),
             'add_trackers',
             <String>[],
@@ -101,11 +102,11 @@ void main() {
       );
       expect(
         prefValueFromInput(
-          ResolvedQbPrefField(
-            QbPrefField(
+          ResolvedPrefField(
+            PrefField(
               keys: const ['queueing'],
               label: 'queueing',
-              kind: QbPrefKind.boolToggle,
+              kind: PrefKind.boolToggle,
             ),
             'queueing',
             true,

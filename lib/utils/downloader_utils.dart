@@ -29,9 +29,15 @@ class DownloaderUtils {
         width: iconSize,
         height: iconSize,
       );
+    } else if (type == DownloaderType.deluge) {
+      return SvgPicture.asset(
+        'assets/logo/Deluge.svg',
+        width: iconSize,
+        height: iconSize,
+      );
     }
 
-    // 没有随包图标的类型（如 Deluge）用通用图标，避免整页因为一个图标崩掉
+    // 没有随包图标的类型用通用图标，避免整页因为一个图标崩掉
     return Icon(Icons.dns_outlined, size: iconSize);
   }
 

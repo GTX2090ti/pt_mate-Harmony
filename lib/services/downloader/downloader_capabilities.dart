@@ -45,8 +45,11 @@ enum DownloaderFeature {
   /// 备选速率模式（Alt Limit）
   altSpeedLimits,
 
-  /// 「服务器设置」分组页：偏好键空间是 qB 的 dottree 路径
-  qbPreferenceSchema,
+  /// 「服务器设置」页：可读写下载器自身的偏好键值
+  ///
+  /// 两边键空间完全不同（qB 是 `/app/preferences`，Deluge 是 `core.get_config`），
+  /// 能力位只表示「读得到、写得回去」，字段表由各自的 pref schema 提供。
+  serverPreferences,
 
   /// 历史累计统计（总下载 / 总上传）；qB 还额外给缓存与队列指标
   cumulativeStats,
@@ -59,6 +62,23 @@ class DownloaderCapabilities {
   final Set<DownloaderFeature> features;
 
   bool has(DownloaderFeature feature) => features.contains(feature);
+
+  /// Transmission / ruTorrent 只实现基础契约，增强能力全缺
+  static const DownloaderCapabilities none = DownloaderCapabilities(
+    features: {},
+  );
+
+  /// 按配置类型取能力集合，供 UI 门控使用
+  ///
+  /// 服务层是拿到客户端实例再查 capabilities，设置页手里只有配置，不想到时就建一个
+  /// 客户端；这里给出同源映射，免得两边各写一份「是不是 qB」的判断。
+  static DownloaderCapabilities forType(DownloaderType type) {
+    return switch (type) {
+      DownloaderType.qbittorrent => qbittorrent,
+      DownloaderType.deluge => deluge,
+      DownloaderType.transmission || DownloaderType.rutorrent => none,
+    };
+  }
 
   /// qBittorrent WebAPI 覆盖全部能力
   static const DownloaderCapabilities qbittorrent = DownloaderCapabilities(
@@ -76,7 +96,7 @@ class DownloaderCapabilities {
       DownloaderFeature.peers,
       DownloaderFeature.speedLimits,
       DownloaderFeature.altSpeedLimits,
-      DownloaderFeature.qbPreferenceSchema,
+      DownloaderFeature.serverPreferences,
       DownloaderFeature.cumulativeStats,
     },
   );
@@ -87,6 +107,7 @@ class DownloaderCapabilities {
   /// 该路径」而不是 qB 的「直接落盘到该路径」，能力位仍算支持，文案上要说明。
   /// 累计统计只能给出总下载/总上传（按种子求和，2.2.0 实机核对），
   /// 缓存与队列指标拿不到。
+  /// 服务器设置读写 `core.get_config` 的扁平键，限速单位本身就是 KiB/s。
   static const DownloaderCapabilities deluge = DownloaderCapabilities(
     features: {
       DownloaderFeature.categorySavePath,
@@ -99,6 +120,7 @@ class DownloaderCapabilities {
       DownloaderFeature.fileSelection,
       DownloaderFeature.peers,
       DownloaderFeature.speedLimits,
+      DownloaderFeature.serverPreferences,
       DownloaderFeature.cumulativeStats,
     },
   );

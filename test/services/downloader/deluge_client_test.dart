@@ -1191,11 +1191,12 @@ void main() {
       expect(client.capabilities.has(DownloaderFeature.tags), isFalse);
       expect(client.capabilities.has(DownloaderFeature.altSpeedLimits), isFalse);
       expect(client.capabilities.has(DownloaderFeature.forceStart), isFalse);
-      expect(
-        client.capabilities.has(DownloaderFeature.qbPreferenceSchema),
-        isFalse,
-      );
       expect(client.capabilities.has(DownloaderFeature.queue), isTrue);
+      // 服务器设置页读写 core.get_config / core.set_config
+      expect(
+        client.capabilities.has(DownloaderFeature.serverPreferences),
+        isTrue,
+      );
       expect(client.capabilities.has(DownloaderFeature.fileSelection), isTrue);
       expect(client.capabilities.has(DownloaderFeature.trackerWrite), isTrue);
       expect(client.capabilities.has(DownloaderFeature.peers), isTrue);

@@ -3,12 +3,14 @@ import 'package:provider/provider.dart';
 
 import '../services/storage/storage_service.dart';
 import '../services/theme/theme_manager.dart';
+import '../services/downloader/downloader_capabilities.dart';
 import '../services/downloader/downloader_config.dart';
 import '../services/downloader/downloader_models.dart';
 import '../services/downloader/downloader_service.dart';
 import '../utils/format.dart';
 import '../utils/notification_helper.dart';
 import 'download_health_page.dart';
+import 'deluge_server_settings_page.dart';
 import 'qb_server_settings_page.dart';
 import 'speed_scheduler_page.dart';
 
@@ -26,15 +28,19 @@ class _QbSettingsPageState extends State<QbSettingsPage> {
   bool _showAllTasks = false;
   bool _loading = true;
 
-  // 服务器设置入口需要判断当前下载器是否为 qBittorrent
+  // 服务器设置入口与累计统计按下载器能力决定是否展示
   DownloaderConfig? _config;
   String? _password;
 
-  // 累计统计取自下载器的 server_state，qBittorrent 才给全
+  // 累计统计取自下载器的 server_state，各家给的指标不全一样，取不到的行不显示
   ServerState? _stats;
   String? _savePath;
   bool _statsLoading = false;
   String? _statsError;
+
+  DownloaderCapabilities get _caps => _config == null
+      ? DownloaderCapabilities.none
+      : DownloaderCapabilities.forType(_config!.type);
 
   @override
   void initState() {
@@ -72,6 +78,7 @@ class _QbSettingsPageState extends State<QbSettingsPage> {
     final config = _config;
     final password = _password;
     if (config == null || password == null || password.isEmpty) return;
+    if (!_caps.has(DownloaderFeature.cumulativeStats)) return;
     setState(() {
       _statsLoading = true;
       _statsError = null;
@@ -82,12 +89,12 @@ class _QbSettingsPageState extends State<QbSettingsPage> {
         password: password,
       );
       String? savePath;
-      if (config is QbittorrentConfig) {
+      if (_caps.has(DownloaderFeature.serverPreferences)) {
         final prefs = await DownloaderService.instance.getPreferences(
           config: config,
           password: password,
         );
-        final raw = prefs['save_path'];
+        final raw = prefs[_defaultSavePathKey(config)];
         savePath = (raw is String && raw.isNotEmpty) ? raw : null;
       }
       if (!mounted) return;
@@ -238,11 +245,16 @@ class _QbSettingsPageState extends State<QbSettingsPage> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                _sectionHeader(context, '服务器设置'),
-                _serverSettingsCard(context),
-                const SizedBox(height: 16),
-                _statsSection(context),
-                const SizedBox(height: 16),
+                // 下载器没声明的能力，整块直接不出现，不再置灰占位
+                if (_caps.has(DownloaderFeature.serverPreferences)) ...[
+                  _sectionHeader(context, '服务器设置'),
+                  _serverSettingsCard(context),
+                  const SizedBox(height: 16),
+                ],
+                if (_caps.has(DownloaderFeature.cumulativeStats)) ...[
+                  _statsSection(context),
+                  const SizedBox(height: 16),
+                ],
                 _sectionHeader(context, '任务工具'),
                 Card(
                   margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -419,39 +431,33 @@ class _QbSettingsPageState extends State<QbSettingsPage> {
       );
     }
 
-    final isQb = _config is QbittorrentConfig;
     final rows = <(String, String)>[
       ('磁盘空间', '${Formatters.dataFromBytes(state.freeSpaceOnDisk)} 可用'),
-      if (isQb) ...[
-        if (_savePath != null) ('默认保存路径', _savePath!),
-        ('历史下载', _bytes(state.alltimeDl)),
-        ('历史上传', _bytes(state.alltimeUl)),
-        ('分享率', state.globalRatio ?? '-'),
+      if (_savePath != null) ('默认保存路径', _savePath!),
+      // 各下载器给不全同一批指标（Deluge 只有总下载/总上传，缓存与队列是 qB 独有），
+      // 取不到值的行直接不显示，避免出现一片 '-'
+      if (state.alltimeDl != null) ('历史下载', _bytes(state.alltimeDl)),
+      if (state.alltimeUl != null) ('历史上传', _bytes(state.alltimeUl)),
+      if (state.globalRatio != null) ('分享率', state.globalRatio!),
+      if (state.totalWastedSession != null)
         ('会话浪费', _bytes(state.totalWastedSession)),
+      if (state.readCacheHits != null)
         ('读缓存命中', _percent(state.readCacheHits)),
+      if (state.totalBuffersSize != null)
         ('总缓冲大小', _bytes(state.totalBuffersSize)),
+      if (state.writeCacheOverload != null)
         ('写入缓存超载', _percent(state.writeCacheOverload)),
+      if (state.readCacheOverload != null)
         ('读取缓存超载', _percent(state.readCacheOverload)),
-        ('队列 I/O', _count(state.queuedIoJobs)),
+      if (state.queuedIoJobs != null) ('队列 I/O', _count(state.queuedIoJobs)),
+      if (state.averageTimeQueue != null)
         ('平均队列时间', _ms(state.averageTimeQueue)),
+      if (state.totalQueuedSize != null)
         ('总队列大小', _bytes(state.totalQueuedSize)),
-      ],
     ];
 
     return Column(
-      children: [
-        for (final row in rows) _statRow(context, row.$1, row.$2),
-        if (!isQb)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: Text(
-              '累计统计项需要 qBittorrent 下载器',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-      ],
+      children: [for (final row in rows) _statRow(context, row.$1, row.$2)],
     );
   }
 
@@ -505,14 +511,20 @@ class _QbSettingsPageState extends State<QbSettingsPage> {
   String _bytes(int? value) =>
       value == null ? '-' : Formatters.dataFromBytes(value);
 
+  /// 默认保存路径的偏好键：qB 是 save_path，Deluge 是 download_location
+  static String _defaultSavePathKey(DownloaderConfig config) =>
+      config is DelugeConfig ? 'download_location' : 'save_path';
+
   String _percent(String? value) => value == null ? '-' : '$value%';
 
   String _count(int? value) => value == null ? '-' : '$value';
 
   String _ms(int? value) => value == null ? '-' : '$value ms';
 
+  /// 「服务器设置」入口：只在下载器声明了 serverPreferences 能力时渲染，
+  /// 目前 qBittorrent 与 Deluge 各有一套字段表。
   Widget _serverSettingsCard(BuildContext context) {
-    final isQb = _config is QbittorrentConfig;
+    final isDeluge = _config is DelugeConfig;
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       elevation: 0,
@@ -526,19 +538,20 @@ class _QbSettingsPageState extends State<QbSettingsPage> {
       ),
       child: ListTile(
         leading: const Icon(Icons.dns_outlined),
-        title: const Text('qBittorrent 选项'),
+        title: Text(isDeluge ? 'Deluge 选项' : 'qBittorrent 选项'),
         subtitle: Text(
-          isQb
-              ? '下载、连接、速度、BitTorrent、RSS、分类与标签'
-              : '需要 qBittorrent 下载器',
+          isDeluge
+              ? '下载、队列与做种、速度、连接、其它'
+              : '下载、连接、速度、BitTorrent、RSS、分类与标签',
         ),
-        enabled: isQb,
         trailing: const Icon(Icons.chevron_right),
-        onTap: isQb
-            ? () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const QbServerSettingsPage()),
-              )
-            : null,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => isDeluge
+                ? const DelugeServerSettingsPage()
+                : const QbServerSettingsPage(),
+          ),
+        ),
       ),
     );
   }
