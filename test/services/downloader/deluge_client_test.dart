@@ -760,6 +760,24 @@ void main() {
       expect(adapter.methods.contains('core.add_torrent_url'), isFalse);
     });
 
+    test('Label 插件未启用时种子照加，只是分类挂不上不报错', () async {
+      adapter.ok('core.add_torrent_url', _hashA);
+      adapter.ok('label.set_torrent', const _RpcError(2, 'Unknown method'));
+
+      await client.addTask(
+        const AddTaskParams(
+          url: 'http://site.example/download.php?id=7',
+          category: 'tv',
+        ),
+      );
+
+      expect(adapter.methods, [
+        'auth.login',
+        'core.add_torrent_url',
+        'label.set_torrent',
+      ]);
+    });
+
     test('添加接口没回传种子 ID 时不抛错，只跳过分类', () async {
       adapter.ok('core.add_torrent_url', 'Torrent added');
 

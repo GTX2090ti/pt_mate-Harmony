@@ -12,6 +12,9 @@ class _RecordingHttpClientAdapter implements HttpClientAdapter {
   int requestCount = 0;
   int timeoutCount = 0;
 
+  /// 默认回一段最小 bencode（`d3:4`），首字节 'd' 才算合法种子
+  List<int> body = const <int>[100, 51, 58, 52];
+
   @override
   Future<ResponseBody> fetch(
     RequestOptions options,
@@ -26,7 +29,7 @@ class _RecordingHttpClientAdapter implements HttpClientAdapter {
         type: DioExceptionType.receiveTimeout,
       );
     }
-    return ResponseBody.fromBytes(const <int>[100, 51, 58, 52], 200);
+    return ResponseBody.fromBytes(body, 200);
   }
 
   @override
@@ -91,6 +94,42 @@ void main() {
 
       expect(result, const <int>[100, 51, 58, 52]);
       expect(adapter.requestCount, 2);
+    });
+
+    test('站点回 200 但内容是网页时，不把字节丢给下载器', () async {
+      final adapter = _RecordingHttpClientAdapter()
+        ..body = '<html><body>please login</body></html>'.codeUnits;
+      final dio = Dio()..httpClientAdapter = adapter;
+      final harness = _DownloadHarness();
+
+      await expectLater(
+        harness.downloadTorrentFileCommon(
+          dio,
+          'https://tracker.example.org/download.php?id=9',
+        ),
+        throwsA(
+          predicate(
+            (e) =>
+                e.toString().contains('站点返回的不是种子文件') &&
+                e.toString().contains('0x3c') &&
+                e.toString().contains('please login'),
+          ),
+        ),
+      );
+    });
+
+    test('站点回空内容时单独报错，不和网页内容混成一条', () async {
+      final adapter = _RecordingHttpClientAdapter()..body = const <int>[];
+      final dio = Dio()..httpClientAdapter = adapter;
+      final harness = _DownloadHarness();
+
+      await expectLater(
+        harness.downloadTorrentFileCommon(
+          dio,
+          'https://tracker.example.org/download.php?id=9',
+        ),
+        throwsA(predicate((e) => e.toString().contains('空内容'))),
+      );
     });
   });
 }

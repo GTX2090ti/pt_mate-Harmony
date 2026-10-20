@@ -90,7 +90,32 @@ mixin TorrentFileDownloaderMixin {
       }
     }
 
-    return result;
+    return _requireTorrentBytes(result);
+  }
+
+  /// 站点 Cookie 失效时很多 PT 站照样回 200，只是内容是登录页/公告页。这种字节
+  /// 直接交给下载器只会得到「decoding filedump failed」一类看不出根因的报错，
+  /// 所以在中转这一步就拦下来，并把内容开头一起报出来。
+  static List<int> _requireTorrentBytes(List<int> bytes) {
+    if (bytes.isEmpty) {
+      throw Exception('站点返回了空内容，未能取得种子文件');
+    }
+    // bencode 的顶层一定是字典，首字符是 'd'
+    if (bytes.first != 0x64) {
+      final code = bytes.first.toRadixString(16).padLeft(2, '0');
+      throw Exception(
+        '站点返回的不是种子文件（首字节 0x$code），通常是 Cookie 失效或被反爬拦截：'
+        '${_printablePreview(bytes)}',
+      );
+    }
+    return bytes;
+  }
+
+  static String _printablePreview(List<int> bytes) {
+    final text = String.fromCharCodes(
+      bytes.take(120).where((b) => b >= 0x20 && b < 0x7f),
+    ).trim();
+    return text.isEmpty ? '<无可读内容>' : text;
   }
 
   bool _shouldAttachSiteCookie(String url, SiteConfig? siteConfig) {

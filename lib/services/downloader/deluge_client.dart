@@ -548,7 +548,12 @@ class DelugeClient
 
     final category = params.category;
     if (category == null || category.isEmpty) return;
-    await _setLabel(hash, category);
+    try {
+      await _setLabel(hash, category);
+    } on DelugeMethodUnavailableException {
+      // 种子这时已经在下载器里了，Label 插件没开只影响分类，不该把整次添加判失败
+      debugPrint('Deluge 未启用 Label 插件，分类「$category」未设置: $hash');
+    }
   }
 
   /// 添加接口返回的是种子 ID 字符串；个别版本会附带前后缀或返回状态串
