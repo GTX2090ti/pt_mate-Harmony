@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 2.29.3+204
+version: 2.29.5+207
 
 environment:
   # [移植适配-OHOS] 上游要求 Dart 3.13；鸿蒙定制 SDK 暂无 Dart≥3.13 版本，暂放宽到 ^3.11.0，升级工具链后恢复。
@@ -55,6 +55,8 @@ dependencies:
   # ota_update: ^7.0.2 # 无 ohos 端口，鸿蒙移植禁用
   device_info_plus: ^11.3.0
   dart_jsonwebtoken: ^3.1.1
+  # [移植适配-OHOS] flutter_test 固定 clock 1.1.2，上移约束会导致版本求解失败。
+  clock: ^1.1.2
   crypto: ^3.0.3
   encrypt: ^5.0.3
   flutter_bbcode: ^1.5.1

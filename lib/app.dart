@@ -2307,9 +2307,9 @@ class _HomePageState extends State<HomePage> {
                   PopupMenuButton<String>(
                     onSelected: _onSortSelected,
                     icon: Icon(
-                      _sortBy == 'none' ? Icons.sort : Icons.sort,
+                      Icons.sort,
                       color: _sortBy == 'none'
-                          ? null
+                          ? Theme.of(context).colorScheme.primary
                           : Theme.of(context).colorScheme.secondary,
                     ),
                     tooltip: '排序',
@@ -2883,7 +2883,7 @@ class _HomePageState extends State<HomePage> {
           keyword: _isAggregateMode
               ? _aggregateRequest!.keyword
               : _keywordCtrl.text,
-          initialMode: _searchMode,
+          initialMode: HomeSearchMode.currentSite,
           searchConfigs: configs,
           selectedStrategy: provider.selectedStrategy,
           supportsCurrentSiteSearch:
