@@ -7,6 +7,17 @@ import 'package:pt_mate/services/downloader/downloader_config.dart';
 import 'package:pt_mate/services/downloader/downloader_models.dart';
 import 'package:pt_mate/services/downloader/rutorrent_client.dart';
 
+/// 最小可用的种子字节：bencode 顶层字典首字节必须是 'd'，
+/// `downloadTorrentFileCommon` 会据此拦截登录页/反爬网页。
+final List<int> _validTorrentBytes = utf8.encode(
+  'd8:announce0:4:infod4:name4:testee',
+);
+
+/// 构造指定长度的种子字节，保留首字节 'd' 以通过中转校验，
+/// 用于验证 base64 包大小边界。
+List<int> _torrentBytesOfSize(int size) =>
+    Uint8List(size)..[0] = 0x64; // 'd'
+
 /// 构造 mode=list 返回的种子数组（索引与 httprpc 插件一致，共30项）
 List<String> buildRawTorrent({
   String isOpen = '1',
@@ -80,7 +91,7 @@ class _FakeHttpClientAdapter implements HttpClientAdapter {
   bool faultOnLoad = false;
 
   /// 种子文件下载内容
-  List<int> torrentFileBytes = [1, 2, 3, 4];
+  List<int> torrentFileBytes = _validTorrentBytes;
 
   /// 记录发往 addtorrent.php 的表单请求体
   final List<String> uploadRequests = [];
@@ -381,8 +392,7 @@ void main() {
     test(
       'addTask torrent url downloads file and uses load.raw_start',
       () async {
-        final adapter = _FakeHttpClientAdapter()
-          ..torrentFileBytes = [1, 2, 3, 4];
+        final adapter = _FakeHttpClientAdapter();
         final client = buildClient(adapter);
 
         await client.addTask(
@@ -391,15 +401,17 @@ void main() {
 
         final xml = adapter.xmlRequests.single;
         expect(xml, contains('<methodName>load.raw_start</methodName>'));
-        expect(xml, contains('<base64>${base64Encode([1, 2, 3, 4])}</base64>'));
+        expect(
+          xml,
+          contains('<base64>${base64Encode(_validTorrentBytes)}</base64>'),
+        );
       },
     );
 
     test(
       'addTask small torrent with savePath uses addtorrent.php multipart',
       () async {
-        final adapter = _FakeHttpClientAdapter()
-          ..torrentFileBytes = [1, 2, 3, 4];
+        final adapter = _FakeHttpClientAdapter();
         final client = buildClient(adapter);
 
         await client.addTask(
@@ -445,7 +457,7 @@ void main() {
       'addTask torrent at packet limit boundary stays on load.raw',
       () async {
         final adapter = _FakeHttpClientAdapter()
-          ..torrentFileBytes = List.filled(1179645, 0);
+          ..torrentFileBytes = _torrentBytesOfSize(1179645);
         final client = buildClient(adapter);
 
         await client.addTask(
@@ -461,7 +473,7 @@ void main() {
       'addTask large torrent falls back to addtorrent.php multipart',
       () async {
         final adapter = _FakeHttpClientAdapter()
-          ..torrentFileBytes = List.filled(1179646, 0);
+          ..torrentFileBytes = _torrentBytesOfSize(1179646);
         final client = buildClient(adapter);
 
         await client.addTask(
@@ -488,7 +500,7 @@ void main() {
 
     test('addTask large torrent omits optional fields when unset', () async {
       final adapter = _FakeHttpClientAdapter()
-        ..torrentFileBytes = List.filled(1179646, 0);
+        ..torrentFileBytes = _torrentBytesOfSize(1179646);
       final client = buildClient(adapter);
 
       await client.addTask(
@@ -505,7 +517,7 @@ void main() {
 
     test('addTask throws when addtorrent.php reports failure', () async {
       final adapter = _FakeHttpClientAdapter()
-        ..torrentFileBytes = List.filled(1179646, 0)
+        ..torrentFileBytes = _torrentBytesOfSize(1179646)
         ..addTorrentResult = 'FailedFile';
       final client = buildClient(adapter);
 
@@ -527,7 +539,7 @@ void main() {
       'addTask accepts JSON result when redirect already followed',
       () async {
         final adapter = _FakeHttpClientAdapter()
-          ..torrentFileBytes = List.filled(1179646, 0)
+          ..torrentFileBytes = _torrentBytesOfSize(1179646)
           ..addTorrentRespondJson = true;
         final client = buildClient(adapter);
 
