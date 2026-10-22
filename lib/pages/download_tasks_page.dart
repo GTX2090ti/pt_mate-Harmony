@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'package:dio/dio.dart';
 import '../services/storage/storage_service.dart';
@@ -57,15 +58,98 @@ class DownloadTasksPage extends StatefulWidget {
 }
 
 /// 任务状态筛选
-enum _TaskFilter {
+enum TaskFilter {
   all('全部'),
   downloading('下载中'),
   uploading('做种中'),
   paused('已暂停'),
   completed('已完成');
 
-  const _TaskFilter(this.label);
+  const TaskFilter(this.label);
   final String label;
+}
+
+/// 按状态 Tab、兼容开关、分类、标签、搜索词筛出当前可见的任务
+///
+/// 列表渲染与「全选」作用域共用这一份实现：两份过滤逻辑各自演进过一次，
+/// 结果全选作用到了看不见的任务上，所以这里必须是唯一入口。
+List<DownloadTask> filterVisibleTasks({
+  required List<DownloadTask> tasks,
+  required TaskFilter statusFilter,
+  required bool showAllTasks,
+  required Set<String> categoryFilter,
+  required Set<String> tagFilter,
+  required String searchQuery,
+}) {
+  var filtered = tasks.where((task) {
+    switch (statusFilter) {
+      case TaskFilter.all:
+        return true;
+      case TaskFilter.downloading:
+        return DownloadTaskState.isDownloading(task.state) ||
+            task.state == DownloadTaskState.queuedDL ||
+            task.state == DownloadTaskState.checkingDL ||
+            task.state == DownloadTaskState.allocating ||
+            task.state == DownloadTaskState.checkingResumeData ||
+            task.state == DownloadTaskState.moving;
+      case TaskFilter.uploading:
+        return task.state == DownloadTaskState.uploading ||
+            task.state == DownloadTaskState.forcedUP ||
+            task.state == DownloadTaskState.stalledUP ||
+            task.state == DownloadTaskState.queuedUP ||
+            task.state == DownloadTaskState.checkingUP;
+      case TaskFilter.paused:
+        return DownloadTaskState.isPaused(task.state) ||
+            task.state == DownloadTaskState.stoppedDL;
+      case TaskFilter.completed:
+        return task.progress >= 1.0 &&
+            (task.state == DownloadTaskState.uploading ||
+                task.state == DownloadTaskState.forcedUP ||
+                task.state == DownloadTaskState.stalledUP ||
+                task.state == DownloadTaskState.queuedUP ||
+                task.state == DownloadTaskState.checkingUP ||
+                task.state == DownloadTaskState.pausedUP);
+    }
+  }).toList();
+
+  // 兼容旧开关：showAll 为 false 时仅显示活跃状态
+  if (!showAllTasks && statusFilter == TaskFilter.all) {
+    filtered = filtered
+        .where(
+          (task) =>
+              task.state == DownloadTaskState.downloading ||
+              task.state == DownloadTaskState.uploading ||
+              task.state == DownloadTaskState.pausedDL ||
+              task.state == DownloadTaskState.stalledDL ||
+              task.state == DownloadTaskState.stoppedDL,
+        )
+        .toList();
+  }
+
+  // 筛选面板：仅展示单选中的分类（空集表示「全部」）
+  if (categoryFilter.isNotEmpty) {
+    filtered = filtered
+        .where((task) => categoryFilter.contains(task.category.trim()))
+        .toList();
+  }
+
+  // 标签维度：命中所选任一标签即保留
+  if (tagFilter.isNotEmpty) {
+    filtered = filtered
+        .where((task) => task.tags.any((tag) => tagFilter.contains(tag.trim())))
+        .toList();
+  }
+
+  // 搜索关键词
+  if (searchQuery.isNotEmpty) {
+    filtered = filtered
+        .where(
+          (task) => task.name.toLowerCase().contains(searchQuery.toLowerCase()),
+        )
+        .toList();
+  }
+
+  return filtered;
 }
 
 class _DownloadTasksPageState extends State<DownloadTasksPage> {
@@ -93,7 +177,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
   bool _sortAscending = false;
 
   // 状态筛选 Tab（qB 风格）
-  _TaskFilter _statusFilter = _TaskFilter.all;
+  TaskFilter _statusFilter = TaskFilter.all;
 
   // 筛选面板：单选中的分类，空集表示「全部」
   final Set<String> _categoryFilter = {};
@@ -207,6 +291,13 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
   /// Deluge / ruTorrent 只有 label，没有与分类并列的标签体系，相关入口整段隐藏
   bool get _supportsTags => _downloaderConfig?.type.supportsTags ?? false;
 
+  /// 自动种子管理只有 qB 与 Deluge 实现得了，其余下载器没有这个开关
+  bool get _supportsAutoManagement =>
+      _downloaderConfig != null &&
+      DownloaderCapabilities.forType(
+        _downloaderConfig!.type,
+      ).has(DownloaderFeature.autoManagement);
+
   // 获取或创建 client 实例
   dynamic _getClient() {
     if (_downloaderConfig == null || _password == null) {
@@ -258,6 +349,13 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
         _serverState = futures[1] as ServerState;
         _diskGuardConfig = diskConfig;
         _readyToDelete = ready;
+        // 重新拉取后，已经不存在的任务要从选中集合里剔除，
+        // 否则标题上的「已选 N 项」会一直虚高
+        final alive = tasks.map((t) => t.hash).toSet();
+        _selectedHashes.removeWhere((h) => !alive.contains(h));
+        if (_selectionMode && _selectedHashes.isEmpty) {
+          _selectionMode = false;
+        }
         if (!silent) _isLoading = false;
         _errorMessage = null; // 清除错误信息
       });
@@ -325,7 +423,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
               onPressed: _selectedHashes.isEmpty ? null : () => _bulkResume(),
             ),
             PopupMenuButton<String>(
-              tooltip: '批量分类 / 标签',
+              tooltip: '批量操作',
               enabled: _selectedHashes.isNotEmpty,
               icon: const Icon(Icons.drive_file_rename_outline),
               onSelected: (value) {
@@ -333,6 +431,8 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                   _bulkSetCategory();
                 } else if (value == 'tags') {
                   _bulkAddTags();
+                } else if (value == 'autoManagement') {
+                  _bulkSetAutoManagement();
                 }
               },
               itemBuilder: (context) => [
@@ -353,6 +453,16 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                       contentPadding: EdgeInsets.zero,
                       leading: Icon(Icons.label_outline),
                       title: Text('批量添加标签'),
+                    ),
+                  ),
+                if (_supportsAutoManagement)
+                  const PopupMenuItem<String>(
+                    value: 'autoManagement',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.autorenew),
+                      title: Text('批量自动种子管理'),
                     ),
                   ),
               ],
@@ -570,12 +680,47 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
     }
   }
   // ===== 批量操作 =====
-  void _selectAll() {
+  /// 批量模式下轻点或长按同一行都是勾选/取消；取消到空集就自动退出批量模式
+  void _toggleTaskSelection(DownloadTask task) {
+    HapticFeedback.lightImpact();
     setState(() {
-      if (_selectedHashes.length == _tasks.length) {
-        _selectedHashes.clear();
+      if (!_selectedHashes.remove(task.hash)) {
+        _selectedHashes.add(task.hash);
+      }
+      if (_selectedHashes.isEmpty) _selectionMode = false;
+    });
+  }
+
+  void _selectAll() {
+    final visibleHashes = _buildFilteredTasks().map((t) => t.hash).toSet();
+    setState(() {
+      if (visibleHashes.isNotEmpty && _selectedHashes.containsAll(visibleHashes)) {
+        _selectedHashes.removeAll(visibleHashes);
       } else {
-        _selectedHashes.addAll(_tasks.map((t) => t.hash));
+        _selectedHashes.addAll(visibleHashes);
+      }
+    });
+  }
+
+  /// 当前可见的任务（与 _buildAllTasksList 共用同一份过滤实现）
+  List<DownloadTask> _buildFilteredTasks() {
+    return filterVisibleTasks(
+      tasks: _tasks,
+      statusFilter: _statusFilter,
+      showAllTasks: _showAllTasks,
+      categoryFilter: _categoryFilter,
+      tagFilter: _tagFilter,
+      searchQuery: _searchQuery,
+    );
+  }
+
+  /// 当筛选条件变化时，从选中集合里剔除已被筛掉的项
+  void _pruneSelectionToVisible() {
+    final visibleHashes = _buildFilteredTasks().map((t) => t.hash).toSet();
+    setState(() {
+      _selectedHashes.removeWhere((h) => !visibleHashes.contains(h));
+      if (_selectionMode && _selectedHashes.isEmpty) {
+        _selectionMode = false;
       }
     });
   }
@@ -758,6 +903,65 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
     }
   }
 
+  /// 批量设置自动种子管理
+  ///
+  /// 开启后任务会跟随所属分类的保存路径，下载器可能真的把文件搬到那个目录，
+  /// 所以这一步要用户明确选开启还是关闭，不做成「一键直接改」。
+  Future<void> _bulkSetAutoManagement() async {
+    final client = _getClient();
+    if (client is! TorrentManagementClient ||
+        !client.capabilities.has(DownloaderFeature.autoManagement)) {
+      NotificationHelper.showError(context, '该下载器不支持自动种子管理');
+      return;
+    }
+    final hashes = _selectedHashes.toList();
+    if (hashes.isEmpty) return;
+
+    final choice = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('批量自动种子管理'),
+        content: Text(
+          '共 ${hashes.length} 个任务。\n\n'
+          '开启：任务跟随所属分类的保存路径，文件可能被移动到该分类的保存目录。\n'
+          '关闭：任务停留在当前保存路径，不再跟随分类变化。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('关闭'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('开启'),
+          ),
+        ],
+      ),
+    );
+    if (choice == null) return;
+
+    try {
+      await client.setAutoManagement(hashes, choice);
+      if (!mounted) return;
+      NotificationHelper.showInfo(
+        context,
+        '已为 ${hashes.length} 个任务${choice ? '开启' : '关闭'}自动种子管理',
+      );
+      setState(() {
+        _selectionMode = false;
+        _selectedHashes.clear();
+      });
+      await _loadTasks(silent: true);
+    } catch (e) {
+      if (!mounted) return;
+      NotificationHelper.showError(context, '批量设置自动种子管理失败: $e');
+    }
+  }
+
   /// qBittorrent 与 Deluge 都没有「把任务设成第 N 档优先级」的接口（4.6/5.0/master
   /// 都查过），队列只能相对移动或置顶/置底，所以这里走那四个真实存在的端点。
   Future<void> _queueAction(
@@ -861,6 +1065,16 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                   _bulkAddTags();
                 },
               ),
+            if (_supportsAutoManagement)
+              ListTile(
+                leading: const Icon(Icons.autorenew),
+                title: const Text('批量自动种子管理'),
+                subtitle: const Text('按分类保存路径跟随文件位置'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _bulkSetAutoManagement();
+                },
+              ),
             const Divider(height: 1),
             ListTile(
               leading: const Icon(Icons.replay),
@@ -929,7 +1143,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
             height: 36,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              children: _TaskFilter.values.map((f) {
+              children: TaskFilter.values.map((f) {
                 final selected = _statusFilter == f;
                 return Padding(
                   padding: const EdgeInsets.only(right: 8),
@@ -941,6 +1155,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                       setState(() {
                         _statusFilter = f;
                       });
+                      _pruneSelectionToVisible();
                     },
                     labelStyle: TextStyle(
                       fontSize: 12,
@@ -996,6 +1211,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                       setState(() {
                         _searchQuery = value;
                       });
+                      _pruneSelectionToVisible();
                     },
                   ),
                 ),
@@ -1105,78 +1321,8 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
   }
 
   Widget _buildAllTasksList() {
-    // 首先根据状态 Tab 过滤任务
-    List<DownloadTask> statusFilteredTasks = _tasks.where((task) {
-      switch (_statusFilter) {
-        case _TaskFilter.all:
-          return true;
-        case _TaskFilter.downloading:
-          return DownloadTaskState.isDownloading(task.state) ||
-              task.state == DownloadTaskState.queuedDL ||
-              task.state == DownloadTaskState.checkingDL ||
-              task.state == DownloadTaskState.allocating ||
-              task.state == DownloadTaskState.checkingResumeData ||
-              task.state == DownloadTaskState.moving;
-        case _TaskFilter.uploading:
-          return task.state == DownloadTaskState.uploading ||
-              task.state == DownloadTaskState.forcedUP ||
-              task.state == DownloadTaskState.stalledUP ||
-              task.state == DownloadTaskState.queuedUP ||
-              task.state == DownloadTaskState.checkingUP;
-        case _TaskFilter.paused:
-          return DownloadTaskState.isPaused(task.state) ||
-              task.state == DownloadTaskState.stoppedDL;
-        case _TaskFilter.completed:
-          return task.progress >= 1.0 &&
-              (task.state == DownloadTaskState.uploading ||
-                  task.state == DownloadTaskState.forcedUP ||
-                  task.state == DownloadTaskState.stalledUP ||
-                  task.state == DownloadTaskState.queuedUP ||
-                  task.state == DownloadTaskState.checkingUP ||
-                  task.state == DownloadTaskState.pausedUP);
-      }
-    }).toList();
-
-    // 兼容旧开关：showAll 为 false 时仅显示活跃状态
-    if (!_showAllTasks && _statusFilter == _TaskFilter.all) {
-      statusFilteredTasks = statusFilteredTasks
-          .where(
-            (task) =>
-                task.state == DownloadTaskState.downloading ||
-                task.state == DownloadTaskState.uploading ||
-                task.state == DownloadTaskState.pausedDL ||
-                task.state == DownloadTaskState.stalledDL ||
-                task.state == DownloadTaskState.stoppedDL,
-          )
-          .toList();
-    }
-
-    // 筛选面板：仅展示单选中的分类（空集表示「全部」）
-    if (_categoryFilter.isNotEmpty) {
-      statusFilteredTasks = statusFilteredTasks
-          .where((task) => _categoryFilter.contains(task.category.trim()))
-          .toList();
-    }
-
-    // 标签维度：命中所选任一标签即保留
-    if (_tagFilter.isNotEmpty) {
-      statusFilteredTasks = statusFilteredTasks
-          .where(
-            (task) => task.tags.any((tag) => _tagFilter.contains(tag.trim())),
-          )
-          .toList();
-    }
-
-    // 然后根据搜索关键词过滤任务名称
-    final filteredTasks = _searchQuery.isEmpty
-        ? statusFilteredTasks
-        : statusFilteredTasks
-              .where(
-                (task) => task.name.toLowerCase().contains(
-                  _searchQuery.toLowerCase(),
-                ),
-              )
-              .toList();
+    // 过滤与全选作用域共用同一份实现：屏幕上看到多少，批量操作就只能作用于多少
+    final filteredTasks = _buildFilteredTasks();
 
     // 排序
     filteredTasks.sort((a, b) {
@@ -1364,6 +1510,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
     StorageService.instance.saveDownloadTasksCategoryFilter(
       _categoryFilter.toList(),
     );
+    _pruneSelectionToVisible();
   }
 
   void _applyTagFilter(Iterable<String> keys) {
@@ -1373,6 +1520,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
         ..addAll(keys);
     });
     StorageService.instance.saveDownloadTasksTagFilter(_tagFilter.toList());
+    _pruneSelectionToVisible();
   }
 
   void _showCategorySheet() => _showPickSheet(
@@ -1565,9 +1713,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                                                 child: Text(
                                                   isAll
                                                       ? '全部'
-                                                      : _optionLabel(
-                                                          entry!.key,
-                                                        ),
+                                                      : '${_optionLabel(entry!.key)} (${entry.value})',
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
@@ -1885,8 +2031,12 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
       statusColor = Theme.of(context).colorScheme.secondary;
     }
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
-        if (_selectionMode) return;
+        if (_selectionMode) {
+          _toggleTaskSelection(task);
+          return;
+        }
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => TrackerManagerPage(
@@ -1897,6 +2047,11 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
         );
       },
       onLongPress: () {
+        if (_selectionMode) {
+          _toggleTaskSelection(task);
+          return;
+        }
+        HapticFeedback.mediumImpact();
         setState(() {
           _selectionMode = true;
           _selectedHashes.add(task.hash);
@@ -1926,15 +2081,24 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                 children: [
                   if (_selectionMode)
                     Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Icon(
-                        isSelected
-                            ? Icons.check_circle
-                            : Icons.radio_button_unchecked,
-                        size: 20,
+                      padding: const EdgeInsets.only(right: 4),
+                      child: IconButton(
+                        icon: Icon(
+                          isSelected
+                              ? Icons.check_circle
+                              : Icons.radio_button_unchecked,
+                          size: 20,
+                        ),
                         color: isSelected
                             ? Theme.of(context).colorScheme.primary
                             : Theme.of(context).colorScheme.outline,
+                        tooltip: isSelected ? '取消选择' : '选择',
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                        padding: EdgeInsets.zero,
+                        onPressed: () => _toggleTaskSelection(task),
                       ),
                     ),
                   // Title and Info
