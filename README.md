@@ -2,7 +2,7 @@
 
 基于 [JustLookAtNow/pt_mate](https://github.com/JustLookAtNow/pt_mate) 适配的 **HarmonyOS 鸿蒙原生版本**，Flutter 3.41.10-ohos 构建，仅供个人自用，在原版基础上添加了多项下载管理与使用体验增强功能。
 
-📦 安装包（未签名 HAP）见本仓库 [Releases](https://github.com/GTX2090ti/pt_mate-Harmony/releases)，当前版本 **ohos-v1.2.1**（应用版本 `2.29.3+201`）。
+📦 安装包（未签名 HAP）见本仓库 [Releases](https://github.com/GTX2090ti/pt_mate-Harmony/releases)，当前版本 **ohos-v1.2.3**（应用版本 `2.29.5+208`）。
 
 ## 鸿蒙化适配
 
@@ -25,7 +25,8 @@
 
 - 状态筛选 Tab（全部 / 下载中 / 做种中 / 已暂停 / 已完成）与任务卡片状态徽章，空列表美化
 - 分类 / 标签 / 排序快捷 chip 行，分类为单选并含「全部」；筛选面板为浮动卡片式，筛选状态持久化
-- 批量修改分类、批量添加分类与标签
+- 种子列表滑动方式可切换：左滑收藏、右滑下载，或在设置中关闭
+- 批量修改分类、批量添加分类与标签，全选只作用于筛选后的可见任务
 
 ### qBittorrent 集成
 
