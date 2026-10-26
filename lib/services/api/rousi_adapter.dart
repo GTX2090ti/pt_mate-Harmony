@@ -475,4 +475,12 @@ class RousiAdapter implements SiteAdapter {
       return [];
     }
   }
+
+  @override
+  Future<bool?> fetchExternalSubtitleStatus(
+    String id, {
+    String? detailUrl,
+  }) async {
+    return null;
+  }
 }

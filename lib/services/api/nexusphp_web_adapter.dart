@@ -11,6 +11,7 @@ import 'package:beautiful_soup_dart/beautiful_soup.dart';
 import 'dart:convert';
 import '../logging/log_file_service.dart';
 import 'nexusphp_helper.dart';
+import 'external_subtitle_detector.dart';
 import 'html_extractor.dart';
 import 'torrent_extractor.dart';
 import 'web_adapter.dart';
@@ -1025,6 +1026,30 @@ class NexusPHPWebAdapter extends SiteAdapter
       descr: '', // 空描述，因为内容将通过webview显示
       webviewUrl: resolvedDetailUrl, // 传递URL给页面组件
     );
+  }
+
+  @override
+  Future<bool?> fetchExternalSubtitleStatus(
+    String id, {
+    String? detailUrl,
+  }) async {
+    final baseUrl = _siteConfig.baseUrl.endsWith('/')
+        ? _siteConfig.baseUrl.substring(0, _siteConfig.baseUrl.length - 1)
+        : _siteConfig.baseUrl;
+    final resolvedUrl =
+        WebAdapterCore.resolveHttpUrl(detailUrl, _siteConfig.baseUrl) ??
+        '$baseUrl/details.php?id=$id&hit=1';
+    try {
+      final response = await _dio.get<dynamic>(resolvedUrl);
+      final data = response.data;
+      if (data == null) return null;
+      final html = data is String ? data : data.toString();
+      if (html.isEmpty) return null;
+      return ExternalSubtitleDetector.detectHtml(html);
+    } catch (_) {
+      // 字幕状态属于附加信息，探测失败不影响列表正常展示。
+      return null;
+    }
   }
 
   @override

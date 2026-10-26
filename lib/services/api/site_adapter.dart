@@ -59,6 +59,16 @@ abstract class SiteAdapter {
 
   /// 获取站点的分类条件配置
   Future<List<SearchCategoryConfig>> getSearchCategories();
+
+  /// 探测种子详情页里的外挂字幕状态。
+  /// `true` 有外挂字幕，`false` 无外挂字幕，`null` 无法判断。
+  /// 默认不支持，由具备该能力的适配器覆写。
+  Future<bool?> fetchExternalSubtitleStatus(
+    String id, {
+    String? detailUrl,
+  }) async {
+    return null;
+  }
 }
 
 /// 站点适配器工厂

@@ -165,6 +165,9 @@ class TorrentItem {
   final bool isTop; // 是否置顶（M-Team：toppingLevel>0）
   final List<TagType> tags; // 种子标签
   final int comments; // 评论数量
+  /// 是否有其他用户上传的外挂字幕。
+  /// null 表示尚未探测（列表行本身不包含该信息，需要异步读取详情页）。
+  final bool? hasExternalSubtitle;
 
   TorrentItem({
     required this.id,
@@ -188,6 +191,7 @@ class TorrentItem {
     this.isTop = false,
     this.tags = const [],
     this.comments = 0,
+    this.hasExternalSubtitle,
   });
 
   TorrentItem copyWith({
@@ -210,6 +214,7 @@ class TorrentItem {
     bool? isTop,
     List<TagType>? tags,
     int? comments,
+    bool? hasExternalSubtitle,
   }) {
     return TorrentItem(
       id: id ?? this.id,
@@ -231,6 +236,7 @@ class TorrentItem {
       isTop: isTop ?? this.isTop,
       tags: tags ?? this.tags,
       comments: comments ?? this.comments,
+      hasExternalSubtitle: hasExternalSubtitle ?? this.hasExternalSubtitle,
     );
   }
 }

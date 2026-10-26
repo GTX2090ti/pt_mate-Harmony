@@ -22,6 +22,7 @@ import 'pages/backup_restore_page.dart';
 import 'pages/legacy_secure_storage_migration_page.dart';
 import 'pages/secure_storage_recovery_page.dart';
 import 'services/api/api_service.dart';
+import 'services/api/external_subtitle_probe.dart';
 import 'services/image_http_client.dart';
 import 'services/settings/display_settings_manager.dart';
 import 'services/storage/storage_service.dart';
@@ -1766,6 +1767,11 @@ class _HomePageState extends State<HomePage> {
   int _pageNumber = 1;
   final int _pageSize = 30;
 
+  // 外挂字幕探测：列表行不包含详情页字幕信息，按需异步补全。
+  final List<_ExternalSubtitleProbeTask> _externalSubtitleProbeQueue = [];
+  bool _externalSubtitleProbeDraining = false;
+  int _externalSubtitleProbeEpoch = 0;
+
   // 标签筛选状态
   final Set<TagType> _includedTags = {};
   final Set<TagType> _excludedTags = {};
@@ -2459,6 +2465,102 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// 列表加载完成后，在后台逐条读取详情页补充“外挂字幕”状态。
+  /// 每页最多 30 条，使用两个并发 worker，避免一次性打满站点请求。
+  void _scheduleExternalSubtitleProbes(
+    List<TorrentItem> items,
+    SiteConfig site,
+  ) {
+    if (!mounted || items.isEmpty || _isAggregateMode) return;
+    if (!site.features.supportTorrentDetail) return;
+    // 只有网页抓取的 NexusPHP 详情页才有“用户上传字幕”区块；
+    // API 类型的详情接口不返回该信息，避免无意义的批量请求。
+    if (site.siteType != SiteType.nexusphpweb) return;
+    final epoch = _externalSubtitleProbeEpoch;
+    for (final item in items) {
+      if (item.hasExternalSubtitle != null) continue;
+      if (ExternalSubtitleProbe.instance.contains(site, item.id)) {
+        final cached = ExternalSubtitleProbe.instance.cached(site, item.id);
+        if (cached != null) {
+          _applyExternalSubtitleStatus(site, item.id, cached, epoch);
+        }
+        continue;
+      }
+      _externalSubtitleProbeQueue.add(
+        _ExternalSubtitleProbeTask(
+          site: site,
+          torrentId: item.id,
+          detailUrl: item.detailUrl,
+          epoch: epoch,
+        ),
+      );
+    }
+    unawaited(_drainExternalSubtitleProbes());
+  }
+
+  Future<void> _drainExternalSubtitleProbes() async {
+    if (_externalSubtitleProbeDraining ||
+        _externalSubtitleProbeQueue.isEmpty ||
+        !mounted) {
+      return;
+    }
+    _externalSubtitleProbeDraining = true;
+    try {
+      await Future.wait([
+        _runExternalSubtitleProbeWorker(),
+        _runExternalSubtitleProbeWorker(),
+      ]);
+    } finally {
+      _externalSubtitleProbeDraining = false;
+      if (mounted && _externalSubtitleProbeQueue.isNotEmpty) {
+        unawaited(_drainExternalSubtitleProbes());
+      }
+    }
+  }
+
+  Future<void> _runExternalSubtitleProbeWorker() async {
+    while (mounted && _externalSubtitleProbeQueue.isNotEmpty) {
+      final task = _externalSubtitleProbeQueue.removeAt(0);
+      if (task.epoch != _externalSubtitleProbeEpoch) continue;
+      if (_currentSite?.id != task.site.id) continue;
+      final status = await ExternalSubtitleProbe.instance.probe(
+        site: task.site,
+        torrentId: task.torrentId,
+        detailUrl: task.detailUrl,
+      );
+      _applyExternalSubtitleStatus(
+        task.site,
+        task.torrentId,
+        status,
+        task.epoch,
+      );
+      if (_externalSubtitleProbeQueue.isNotEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+      }
+    }
+  }
+
+  void _applyExternalSubtitleStatus(
+    SiteConfig site,
+    String torrentId,
+    bool? status,
+    int epoch,
+  ) {
+    if (!mounted ||
+        status == null ||
+        epoch != _externalSubtitleProbeEpoch ||
+        _currentSite?.id != site.id) {
+      return;
+    }
+    final index = _items.indexWhere((item) => item.id == torrentId);
+    if (index < 0) return;
+    final item = _items[index];
+    if (item.hasExternalSubtitle == status) return;
+    setState(() {
+      _items[index] = item.copyWith(hasExternalSubtitle: status);
+    });
+  }
+
   Future<void> _loadMore() async {
     if (_isAggregateMode || _loading || !_hasMore) return;
     await _search(pageNumber: _pageNumber + 1);
@@ -2510,6 +2612,8 @@ class _HomePageState extends State<HomePage> {
     }
 
     if (reset) {
+      _externalSubtitleProbeEpoch++;
+      _externalSubtitleProbeQueue.clear();
       setState(() {
         _pageNumber = 1;
         _items.clear();
@@ -2578,6 +2682,7 @@ class _HomePageState extends State<HomePage> {
               additionalParams: additionalParams,
             );
       if (_isCurrentContentOperation(generation)) {
+        var addedItems = const <TorrentItem>[];
         setState(() {
           // 如果是重置搜索或第一页，清空现有数据
           if (reset || requestPageNumber == 1) {
@@ -2589,10 +2694,12 @@ class _HomePageState extends State<HomePage> {
               .where((item) => !existingIds.contains(item.id))
               .toList();
           _items.addAll(newItems);
+          addedItems = newItems;
           _pageNumber = requestPageNumber;
           _totalPages = res.totalPages;
           _hasMore = requestPageNumber < _totalPages;
         });
+        _scheduleExternalSubtitleProbes(addedItems, requestSite);
       }
     } catch (e) {
       if (_isCurrentContentOperation(generation)) {
@@ -4268,3 +4375,18 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
+/// 外挂字幕探测任务：记录发起时的站点与查询代次，
+/// 站点切换或重新搜索后旧任务直接丢弃。
+class _ExternalSubtitleProbeTask {
+  final SiteConfig site;
+  final String torrentId;
+  final String? detailUrl;
+  final int epoch;
+
+  const _ExternalSubtitleProbeTask({
+    required this.site,
+    required this.torrentId,
+    required this.detailUrl,
+    required this.epoch,
+  });
+}

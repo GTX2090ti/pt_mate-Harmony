@@ -181,17 +181,6 @@ class TorrentListItem extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               child: Stack(
                 children: [
-                  // 移动端已收藏大红心背景
-                  if (isMobile && torrent.collection)
-                    Positioned(
-                      right: 10,
-                      bottom: 10,
-                      child: Icon(
-                        Icons.favorite,
-                        color: Colors.red.withValues(alpha: 0.7),
-                        size: 30,
-                      ),
-                    ),
                   Padding(
                     padding: EdgeInsets.symmetric(
                       horizontal: isMobile ? 3 : 4,
@@ -735,6 +724,7 @@ class TorrentInfo extends StatelessWidget {
             torrent: torrent,
             currentSite: currentSite,
             compact: isCompactDesktopNoCover,
+            showCollectionIndicator: isMobile,
             trailing:
                 isAggregateMode &&
                     siteName != null &&
@@ -758,12 +748,14 @@ class _StatsRow extends StatelessWidget {
   final SiteConfig? currentSite;
   final bool compact;
   final Widget? trailing;
+  final bool showCollectionIndicator;
 
   const _StatsRow({
     required this.torrent,
     this.currentSite,
     this.compact = false,
     this.trailing,
+    this.showCollectionIndicator = false,
   });
 
   Widget _downloadStatusIcon(DownloadStatus status, AppSemanticColors colors) {
@@ -827,6 +819,19 @@ class _StatsRow extends StatelessWidget {
               ),
             ),
           ),
+          // 收藏红心放在下载状态勾之前，避免与右下角的已下载勾挤在一起。
+          // 桌面端右侧已有收藏按钮，这里只给移动端做状态提示。
+          if (showCollectionIndicator && torrent.collection) ...[
+            const SizedBox(width: AppSpacing.sm),
+            Tooltip(
+              message: '已收藏',
+              child: Icon(
+                Icons.favorite,
+                color: Colors.red.withValues(alpha: 0.85),
+                size: 15,
+              ),
+            ),
+          ],
           if (showComments) ...[
             const SizedBox(width: AppSpacing.xs),
             Icon(
@@ -844,6 +849,12 @@ class _StatsRow extends StatelessWidget {
           if (trailing != null) ...[
             const SizedBox(width: AppSpacing.sm),
             trailing!,
+          ],
+          if (torrent.hasExternalSubtitle != null) ...[
+            const SizedBox(width: AppSpacing.sm),
+            _ExternalSubtitleBadge(
+              hasSubtitle: torrent.hasExternalSubtitle!,
+            ),
           ],
         ],
       ),
@@ -1589,6 +1600,38 @@ class _TagChip extends StatelessWidget {
           fontSize: 10,
           fontWeight: FontWeight.w500,
           height: 1.1,
+        ),
+      ),
+    );
+  }
+}
+
+/// 外挂字幕徽章：位于统计行最右侧。
+/// 有用户上传字幕时显示绿色，无字幕时显示灰色；未探测到详情页信息时不显示。
+class _ExternalSubtitleBadge extends StatelessWidget {
+  final bool hasSubtitle;
+
+  const _ExternalSubtitleBadge({required this.hasSubtitle});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = hasSubtitle ? Colors.green : Colors.grey;
+    return Tooltip(
+      message: hasSubtitle ? '有用户上传的外挂字幕' : '暂时没有外挂字幕',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
+        child: Text(
+          hasSubtitle ? '有外挂字幕' : '无外挂字幕',
+          style: TextStyle(
+            color: color,
+            fontSize: AppFontSize.badge,
+            fontWeight: FontWeight.w700,
+            height: 1.1,
+          ),
         ),
       ),
     );

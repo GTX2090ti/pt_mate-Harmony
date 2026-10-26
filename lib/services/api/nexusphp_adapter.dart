@@ -580,4 +580,13 @@ class NexusPHPAdapter with NexusPHPHelper implements SiteAdapter {
       return categories;
     }
   }
+
+  @override
+  Future<bool?> fetchExternalSubtitleStatus(
+    String id, {
+    String? detailUrl,
+  }) async {
+    // 该接口只返回简介等字段，没有用户上传字幕的信息。
+    return null;
+  }
 }

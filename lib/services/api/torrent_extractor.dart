@@ -2,6 +2,7 @@
 // ignore_for_file: prefer_initializing_formals
 
 import '../../models/app_models.dart';
+import 'external_subtitle_detector.dart';
 import 'html_extractor.dart';
 
 /// 种子行提取器
@@ -87,6 +88,12 @@ class TorrentRowExtractor {
     );
     final createDateTimeConfig = _extractNestedConfig('createDate', 'time');
 
+    // 列表行如果已经带有字幕链接/图标，直接作为外挂字幕状态；
+    // 没有则保持 null，由列表页异步读取详情页补全。
+    final rowSubtitleStatus = ExternalSubtitleDetector.detectRowMarker(
+      _elementHtml(rowElement),
+    );
+
     // 构建 TorrentItem
     return TorrentItem(
       id: torrentId,
@@ -128,7 +135,18 @@ class TorrentRowExtractor {
         _tagMapping,
       ),
       comments: extracted['comments']?.first.intValueOr(0) ?? 0,
+      hasExternalSubtitle: rowSubtitleStatus,
     );
+  }
+
+  /// 读取行元素内部 HTML，用于识别行内字幕标记。
+  String _elementHtml(dynamic element) {
+    try {
+      final html = element?.innerHtml;
+      return html is String ? html : '';
+    } catch (_) {
+      return '';
+    }
   }
 
   /// 提取嵌套配置，如 fieldsConfig['discountEndTime']['time']

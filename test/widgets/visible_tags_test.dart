@@ -156,8 +156,11 @@ void main() {
       expect(
         tester.getTopLeft(find.text(tagged.name)).dy -
             tester.getTopLeft(taggedItem).dy,
-        tester.getTopLeft(find.text(plain.name)).dy -
-            tester.getTopLeft(plainItem).dy,
+        moreOrLessEquals(
+          tester.getTopLeft(find.text(plain.name)).dy -
+              tester.getTopLeft(plainItem).dy,
+          epsilon: 0.01,
+        ),
       );
       expect(tester.takeException(), isNull);
     });

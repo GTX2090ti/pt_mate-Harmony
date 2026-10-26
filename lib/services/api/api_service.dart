@@ -189,6 +189,17 @@ class ApiService {
     );
   }
 
+  /// 探测详情页里的外挂字幕状态。
+  /// 不支持该能力的站点返回 null，调用方应静默忽略。
+  Future<bool?> fetchExternalSubtitleStatus(
+    String id, {
+    required SiteConfig siteConfig,
+    String? detailUrl,
+  }) async {
+    final adapter = await getAdapter(siteConfig);
+    return adapter.fetchExternalSubtitleStatus(id, detailUrl: detailUrl);
+  }
+
   /// 获取种子评论列表
   Future<TorrentCommentList> fetchComments(
     String id, {
