@@ -23,6 +23,13 @@ workflows:
               raise SystemExit("flutter_inappwebview path dependency not found")
           text = text.replace(old, "  flutter_inappwebview: 6.1.5\n", 1)
 
+          # pub.dev 版 flutter_secure_storage 11.x 依赖 win32 ^6，与 share_plus 11 冲突，
+          # 与 OHOS 补丁副本同源的 10.x 系列无此冲突，且 API 一致。
+          secure = "  flutter_secure_storage: ^11.2.0\n"
+          if secure not in text:
+              raise SystemExit("flutter_secure_storage constraint not found")
+          text = text.replace(secure, "  flutter_secure_storage: ^10.3.4\n", 1)
+
           # OHOS-only dependency_overrides use TargetPlatform.ohos / Platform.isOhos,
           # which upstream Flutter does not provide; drop them to use pub.dev versions.
           for name in ("flutter_secure_storage", "file_picker"):
