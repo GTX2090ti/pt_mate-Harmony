@@ -7,9 +7,7 @@
   "author": "",
   "license": "",
   "dependencies": {},
-  "devDependencies": {
-    "@ohos/hypium": "1.0.6"
-  },
+  "devDependencies": {},
   "overrides": {
     "flutter_inappwebview_ohos": "file:../packages/flutter_inappwebview_ohos/flutter_inappwebview_ohos/ohos"
   }
