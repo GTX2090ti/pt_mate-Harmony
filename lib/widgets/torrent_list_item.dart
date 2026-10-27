@@ -655,11 +655,13 @@ class TorrentInfo extends StatelessWidget {
     final isCompactDesktopNoCover = !isMobile && !showCover;
     final showInlineRatings = !showCover && hasAnyRating;
     final showInlineDiscount = torrent.discount != DiscountType.normal;
+    final showSubtitleBadge = torrent.hasExternalSubtitle != null;
     final hasHeaderRow =
         torrent.isTop ||
         visibleTags.isNotEmpty ||
         showInlineRatings ||
-        showInlineDiscount;
+        showInlineDiscount ||
+        showSubtitleBadge;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -688,6 +690,11 @@ class TorrentInfo extends StatelessWidget {
                         hasDouban: hasDouban,
                         hasImdb: hasImdb,
                         compact: isMobile,
+                      )
+                    : null,
+                subtitleBadge: showSubtitleBadge
+                    ? _ExternalSubtitleBadge(
+                        hasSubtitle: torrent.hasExternalSubtitle!,
                       )
                     : null,
               ),
@@ -849,12 +856,6 @@ class _StatsRow extends StatelessWidget {
           if (trailing != null) ...[
             const SizedBox(width: AppSpacing.sm),
             trailing!,
-          ],
-          if (torrent.hasExternalSubtitle != null) ...[
-            const SizedBox(width: AppSpacing.sm),
-            _ExternalSubtitleBadge(
-              hasSubtitle: torrent.hasExternalSubtitle!,
-            ),
           ],
         ],
       ),
@@ -1254,12 +1255,14 @@ class _TagsRatingRow extends StatelessWidget {
   final bool isTop;
   final Widget? ratingBadges;
   final Widget? discountBadge;
+  final Widget? subtitleBadge;
 
   const _TagsRatingRow({
     required this.tags,
     this.isTop = false,
     this.ratingBadges,
     this.discountBadge,
+    this.subtitleBadge,
   });
 
   @override
@@ -1292,6 +1295,11 @@ class _TagsRatingRow extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: 160),
             child: ratingBadges,
           ),
+        ],
+        if (subtitleBadge != null) ...[
+          if (hasLeadingBadges || ratingBadges != null)
+            const SizedBox(width: 6),
+          subtitleBadge!,
         ],
       ],
     );
