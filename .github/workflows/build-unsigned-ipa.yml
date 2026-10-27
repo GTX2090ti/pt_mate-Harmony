@@ -1,0 +1,70 @@
+name: Build Unsigned IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-unsigned-ipa:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Read Flutter version
+        id: flutter-version
+        shell: bash
+        run: |
+          version="$(tr -d '[:space:]' < .flutter-version)"
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.flutter-version.outputs.version }}
+          channel: stable
+          cache: true
+          cache-key: 'flutter-:os:-:channel:-:version:-:arch:-:hash:'
+          cache-path: '${{ runner.tool_cache }}/flutter'
+
+      - name: Cache Pub dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-cache-${{ hashFiles('pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-cache-
+
+      - name: Get dependencies
+        uses: ./.github/actions/pub-get
+
+      - name: Install CocoaPods dependencies
+        run: |
+          cd ios
+          pod install
+
+      - name: Build iOS app without codesign
+        run: flutter build ios --release --no-codesign
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          VERSION="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | head -1 | cut -d+ -f1)"
+          test -n "$VERSION"
+          APP="build/ios/iphoneos/Runner.app"
+          test -d "$APP"
+          mkdir -p Payload ios/build
+          cp -R "$APP" Payload/
+          zip -r "ios/build/pt_mate-${VERSION}-unsigned.ipa" Payload/
+          rm -rf Payload
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v6
+        with:
+          name: unsigned-ipa
+          path: ios/build/pt_mate-*-unsigned.ipa
+          retention-days: 7
