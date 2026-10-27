@@ -17,6 +17,37 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Replace OHOS-only WebView dependency with pub.dev release
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          pubspec = Path("pubspec.yaml")
+          text = pubspec.read_text()
+          old = (
+              "  flutter_inappwebview:\n"
+              "    path: packages/flutter_inappwebview_ohos/flutter_inappwebview\n"
+          )
+          if old not in text:
+              raise SystemExit("flutter_inappwebview path dependency not found")
+          pubspec.write_text(text.replace(old, "  flutter_inappwebview: 6.1.5\n", 1))
+
+          lock = Path("pubspec.lock")
+          lines = lock.read_text().splitlines()
+          kept = []
+          skipping = False
+          for line in lines:
+              if line.startswith("  flutter_inappwebview") and line.rstrip().endswith(":"):
+                  skipping = True
+                  continue
+              if skipping:
+                  if line.strip() == "":
+                      skipping = False
+                  continue
+              kept.append(line)
+          lock.write_text("\n".join(kept) + "\n")
+          PY
+
       - name: Read Flutter version
         id: flutter-version
         shell: bash
