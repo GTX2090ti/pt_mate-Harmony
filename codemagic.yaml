@@ -47,14 +47,34 @@ workflows:
           pod install
       - name: Build unsigned iOS app
         script: |
-          flutter build ios --release --no-codesign
+          set -e
+          # flutter build ios 在 --no-codesign 下仍会在结束时校验 Development Team 并返回非 0，
+          # 但 Xcode 阶段通常已产出 Runner.app，因此失败后继续检查产物，缺失则回退直接调用 xcodebuild。
+          flutter build ios --release --no-codesign || true
+          APP="build/ios/iphoneos/Runner.app"
+          if [ ! -d "$APP" ]; then
+            cd ios
+            xcodebuild -workspace Runner.xcworkspace -scheme Runner -configuration Release \
+              -sdk iphoneos -derivedDataPath ../build/ios-derived \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+            cd ..
+            APP="build/ios-derived/Build/Products/Release-iphoneos/Runner.app"
+          fi
+          test -d "$APP"
       - name: Package unsigned IPA
         script: |
+          set -e
+          APP="build/ios/iphoneos/Runner.app"
+          if [ ! -d "$APP" ]; then
+            APP="build/ios-derived/Build/Products/Release-iphoneos/Runner.app"
+          fi
+          test -d "$APP"
+          test -d "$APP/Frameworks/App.framework/flutter_assets"
+          rm -rf build/ios/ipa
           mkdir -p build/ios/ipa/Payload
-          rm -rf build/ios/ipa/Payload/Runner.app
-          cp -R build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
+          cp -R "$APP" build/ios/ipa/Payload/Runner.app
           cd build/ios/ipa
-          rm -f PTMate-214-unsigned.ipa
           zip -qry PTMate-214-unsigned.ipa Payload
+          ls -lh PTMate-214-unsigned.ipa
     artifacts:
       - build/ios/ipa/*.ipa
