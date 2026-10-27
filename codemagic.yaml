@@ -8,7 +8,7 @@ workflows:
       xcode: latest
       cocoapods: default
     scripts:
-      - name: Use pub.dev flutter_inappwebview for iOS
+      - name: Use pub.dev packages for iOS
         script: |
           python3 - <<'PY'
           from pathlib import Path
@@ -21,14 +21,23 @@ workflows:
           )
           if old not in text:
               raise SystemExit("flutter_inappwebview path dependency not found")
-          pubspec.write_text(text.replace(old, "  flutter_inappwebview: 6.1.5\n", 1))
+          text = text.replace(old, "  flutter_inappwebview: 6.1.5\n", 1)
+
+          # OHOS-only dependency_overrides use TargetPlatform.ohos / Platform.isOhos,
+          # which upstream Flutter does not provide; drop them to use pub.dev versions.
+          for name in ("flutter_secure_storage", "file_picker"):
+              override = f"  {name}:\n    path: packages/{name}_ohos\n"
+              if override not in text:
+                  raise SystemExit(f"{name} override not found")
+              text = text.replace(override, "", 1)
+          pubspec.write_text(text)
 
           lock = Path("pubspec.lock")
-          lines = lock.read_text().splitlines()
+          prefixes = ("flutter_inappwebview", "flutter_secure_storage", "file_picker")
           kept = []
           skipping = False
-          for line in lines:
-              if line.startswith("  flutter_inappwebview") and line.rstrip().endswith(":"):
+          for line in lock.read_text().splitlines():
+              if any(line.startswith(f"  {p}") for p in prefixes) and line.rstrip().endswith(":"):
                   skipping = True
                   continue
               if skipping:
