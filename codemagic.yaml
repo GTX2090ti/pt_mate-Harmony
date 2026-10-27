@@ -1,0 +1,96 @@
+workflows:
+  ios-unsigned:
+    name: iOS Unsigned IPA
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      flutter: 3.47.0
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Use pub.dev packages for iOS
+        script: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          pubspec = Path("pubspec.yaml")
+          text = pubspec.read_text()
+          old = (
+              "  flutter_inappwebview:\n"
+              "    path: packages/flutter_inappwebview_ohos/flutter_inappwebview\n"
+          )
+          if old not in text:
+              raise SystemExit("flutter_inappwebview path dependency not found")
+          text = text.replace(old, "  flutter_inappwebview: 6.1.5\n", 1)
+
+          # pub.dev 版 flutter_secure_storage 11.x 依赖 win32 ^6，与 share_plus 11 冲突，
+          # 与 OHOS 补丁副本同源的 10.x 系列无此冲突，且 API 一致。
+          secure = "  flutter_secure_storage: ^11.2.0\n"
+          if secure not in text:
+              raise SystemExit("flutter_secure_storage constraint not found")
+          text = text.replace(secure, "  flutter_secure_storage: ^10.3.4\n", 1)
+
+          # OHOS-only dependency_overrides use TargetPlatform.ohos / Platform.isOhos,
+          # which upstream Flutter does not provide; drop them to use pub.dev versions.
+          for name in ("flutter_secure_storage", "file_picker"):
+              override = f"  {name}:\n    path: packages/{name}_ohos\n"
+              if override not in text:
+                  raise SystemExit(f"{name} override not found")
+              text = text.replace(override, "", 1)
+          pubspec.write_text(text)
+
+          lock = Path("pubspec.lock")
+          prefixes = ("flutter_inappwebview", "flutter_secure_storage", "file_picker")
+          kept = []
+          skipping = False
+          for line in lock.read_text().splitlines():
+              if any(line.startswith(f"  {p}") for p in prefixes) and line.rstrip().endswith(":"):
+                  skipping = True
+                  continue
+              if skipping:
+                  if line.strip() == "":
+                      skipping = False
+                  continue
+              kept.append(line)
+          lock.write_text("\n".join(kept) + "\n")
+          PY
+      - name: Flutter pub get
+        script: |
+          flutter pub get
+      - name: Pod install
+        script: |
+          cd ios
+          pod install
+      - name: Build unsigned iOS app
+        script: |
+          set -e
+          # flutter build ios 在 --no-codesign 下仍会在结束时校验 Development Team 并返回非 0，
+          # 但 Xcode 阶段通常已产出 Runner.app，因此失败后继续检查产物，缺失则回退直接调用 xcodebuild。
+          flutter build ios --release --no-codesign || true
+          APP="build/ios/iphoneos/Runner.app"
+          if [ ! -d "$APP" ]; then
+            cd ios
+            xcodebuild -workspace Runner.xcworkspace -scheme Runner -configuration Release \
+              -sdk iphoneos -derivedDataPath ../build/ios-derived \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+            cd ..
+            APP="build/ios-derived/Build/Products/Release-iphoneos/Runner.app"
+          fi
+          test -d "$APP"
+      - name: Package unsigned IPA
+        script: |
+          set -e
+          APP="build/ios/iphoneos/Runner.app"
+          if [ ! -d "$APP" ]; then
+            APP="build/ios-derived/Build/Products/Release-iphoneos/Runner.app"
+          fi
+          test -d "$APP"
+          test -d "$APP/Frameworks/App.framework/flutter_assets"
+          rm -rf build/ios/ipa
+          mkdir -p build/ios/ipa/Payload
+          cp -R "$APP" build/ios/ipa/Payload/Runner.app
+          cd build/ios/ipa
+          zip -qry PTMate-214-unsigned.ipa Payload
+          ls -lh PTMate-214-unsigned.ipa
+    artifacts:
+      - build/ios/ipa/*.ipa
