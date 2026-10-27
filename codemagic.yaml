@@ -1,0 +1,60 @@
+workflows:
+  ios-unsigned:
+    name: iOS Unsigned IPA
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      flutter: 3.47.0
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Use pub.dev flutter_inappwebview for iOS
+        script: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          pubspec = Path("pubspec.yaml")
+          text = pubspec.read_text()
+          old = (
+              "  flutter_inappwebview:\n"
+              "    path: packages/flutter_inappwebview_ohos/flutter_inappwebview\n"
+          )
+          if old not in text:
+              raise SystemExit("flutter_inappwebview path dependency not found")
+          pubspec.write_text(text.replace(old, "  flutter_inappwebview: 6.1.5\n", 1))
+
+          lock = Path("pubspec.lock")
+          lines = lock.read_text().splitlines()
+          kept = []
+          skipping = False
+          for line in lines:
+              if line.startswith("  flutter_inappwebview") and line.rstrip().endswith(":"):
+                  skipping = True
+                  continue
+              if skipping:
+                  if line.strip() == "":
+                      skipping = False
+                  continue
+              kept.append(line)
+          lock.write_text("\n".join(kept) + "\n")
+          PY
+      - name: Flutter pub get
+        script: |
+          flutter pub get
+      - name: Pod install
+        script: |
+          cd ios
+          pod install
+      - name: Build unsigned iOS app
+        script: |
+          flutter build ios --release --no-codesign
+      - name: Package unsigned IPA
+        script: |
+          mkdir -p build/ios/ipa/Payload
+          rm -rf build/ios/ipa/Payload/Runner.app
+          cp -R build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
+          cd build/ios/ipa
+          rm -f PTMate-214-unsigned.ipa
+          zip -qry PTMate-214-unsigned.ipa Payload
+    artifacts:
+      - build/ios/ipa/*.ipa
