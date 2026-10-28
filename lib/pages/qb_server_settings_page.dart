@@ -253,63 +253,16 @@ class _QbCategoryTagSectionState extends State<_QbCategoryTagSection> {
     );
   }
 
-  /// 统计分类/标签下受影响的种子数量；查询失败返回 null（不阻断删除流程）
-  Future<int?> _countAffectedTorrents(String kind, String name) async {
-    if (!mounted) return null;
-    final progress = showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => const AlertDialog(
-        content: Row(
-          children: [
-            SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            SizedBox(width: 16),
-            Expanded(child: Text('正在统计受影响的种子…')),
-          ],
-        ),
-      ),
-    );
-    int? count;
-    try {
-      final tasks = await DownloaderService.instance.getTasks(
-        config: widget.config,
-        password: widget.password,
-      );
-      count = tasks
-          .where(
-            (task) => kind == '分类'
-                ? task.category == name
-                : task.tags.contains(name),
-          )
-          .length;
-    } catch (_) {
-      count = null;
-    }
-    if (mounted) Navigator.of(context, rootNavigator: true).pop();
-    await progress;
-    return count;
-  }
-
   Future<void> _delete(String kind, String name) async {
-    // 删除前先统计受影响的种子，避免误操作
-    final affected = await _countAffectedTorrents(kind, name);
-    if (!mounted) return;
-    final message = kind == '分类'
-        ? affected == null
-            ? '确定删除分类"$name"吗？删除后该分类下的种子将变为未分类，文件不会被删除。'
-            : '分类"$name"下有 $affected 个种子，删除后这些种子将变为未分类，文件不会被删除。'
-        : affected == null
-        ? '确定删除标签"$name"吗？删除后将从种子移除该标签，种子不会被删除。'
-        : '标签"$name"下有 $affected 个种子，删除后将从这些种子移除该标签，种子不会被删除。';
     final confirm = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text('删除$kind'),
-        content: Text('$message\n\n此操作不可撤销，确认删除？'),
+        content: Text(
+          kind == '分类'
+              ? '确定删除分类"$name"吗？不会删除已归类任务的文件。'
+              : '确定删除标签"$name"吗？不会删除种子本身。',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -317,11 +270,7 @@ class _QbCategoryTagSectionState extends State<_QbCategoryTagSection> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-              foregroundColor: Theme.of(context).colorScheme.onError,
-            ),
-            child: const Text('确认删除'),
+            child: const Text('删除'),
           ),
         ],
       ),

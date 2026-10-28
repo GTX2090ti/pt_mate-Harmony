@@ -846,6 +846,29 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
       allowCreate: true,
     );
     if (category == null) return;
+    final count = _selectedHashes.length;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('批量修改分类'),
+        content: Text(
+          category.isEmpty
+              ? '将清除 $count 个任务的分类，确认继续？'
+              : '将把这 $count 个任务修改为分类"$category"，确认继续？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('确认修改'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
     try {
       await DownloaderService.instance.setCategory(
         config: config,
