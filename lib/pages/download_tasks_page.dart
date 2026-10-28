@@ -1216,6 +1216,32 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                   ),
                 ),
               ),
+              const SizedBox(width: 4),
+              // 「显示全部」开关：关闭时仅显示活跃任务，开启后包含已完成等非活跃状态
+              Tooltip(
+                message: _showAllTasks
+                    ? '当前显示全部任务，点击仅显示活跃任务'
+                    : '当前仅显示活跃任务，点击显示全部任务',
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('显示全部', style: TextStyle(fontSize: 12)),
+                    Switch.adaptive(
+                      value: _showAllTasks,
+                      onChanged: (value) async {
+                        setState(() {
+                          _showAllTasks = value;
+                        });
+                        _pruneSelectionToVisible();
+                        await StorageService.instance
+                            .saveDownloadTasksShowAll(value);
+                      },
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 6),
