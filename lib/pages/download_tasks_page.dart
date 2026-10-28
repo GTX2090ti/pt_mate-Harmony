@@ -1226,18 +1226,19 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Text('显示全部', style: TextStyle(fontSize: 12)),
-                    Switch.adaptive(
-                      value: _showAllTasks,
-                      onChanged: (value) async {
-                        setState(() {
-                          _showAllTasks = value;
-                        });
-                        _pruneSelectionToVisible();
-                        await StorageService.instance
-                            .saveDownloadTasksShowAll(value);
-                      },
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    Transform.scale(
+                      scale: 0.8,
+                      child: Switch.adaptive(
+                        value: _showAllTasks,
+                        onChanged: (value) async {
+                          setState(() {
+                            _showAllTasks = value;
+                          });
+                          _pruneSelectionToVisible();
+                          await StorageService.instance
+                              .saveDownloadTasksShowAll(value);
+                        },
+                      ),
                     ),
                   ],
                 ),
