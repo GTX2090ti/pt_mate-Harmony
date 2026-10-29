@@ -10,6 +10,7 @@ import 'package:pt_mate/providers/aggregate_search_provider.dart';
 import 'package:pt_mate/services/aggregate_search_service.dart';
 import 'package:pt_mate/services/settings/display_settings_manager.dart';
 import 'package:pt_mate/services/storage/storage_service.dart';
+import 'package:pt_mate/widgets/torrent_list_item.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -207,7 +208,7 @@ void main() {
       _aggregateItem('site-b', 'same-id', '聚合结果'),
     ]);
     await _finishNotifications(tester);
-    expect(find.text('聚合搜索 - PT Mate'), findsOneWidget);
+    expect(find.text('聚合搜索 - PT-Mate'), findsOneWidget);
     expect(find.text('聚合结果'), findsOneWidget);
     expect(find.text('原内容 0'), findsNothing);
     expect(appState.site.id, site.id);
@@ -248,7 +249,7 @@ void main() {
 
     await tester.tap(find.text('返回当前站点'));
     await tester.pumpAndSettle();
-    expect(find.text('聚合搜索 - PT Mate'), findsNothing);
+    expect(find.text('聚合搜索 - PT-Mate'), findsNothing);
     expect(controller.offset, closeTo(offset, 0.1));
     expect(search.invocations, hasLength(1));
     controller.jumpTo(controller.position.maxScrollExtent);
@@ -278,10 +279,12 @@ void main() {
     await tester.longPress(find.byKey(const ValueKey('site-b:1')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('home-search-fab')), findsNothing);
+    // 多选时顶栏要显示已选种子数，而不是站点名/聚合标题
+    expect(find.text('聚合搜索 · 已选 1 个种子'), findsOneWidget);
 
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    expect(find.text('聚合搜索 - PT Mate'), findsOneWidget);
+    expect(find.text('聚合搜索 - PT-Mate'), findsOneWidget);
     expect(find.byKey(const ValueKey('home-search-fab')), findsOneWidget);
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
@@ -386,6 +389,36 @@ void main() {
     await _finishNotifications(tester);
     expect(find.text('其他站点结果'), findsOneWidget);
     expect(search.invocations, isEmpty);
+  });
+
+  testWidgets('当前站点列表多选时顶栏显示已选种子数', (tester) async {
+    final site = _site('site-a', '站点 A');
+    final appState = _FakeAppState(site);
+    final search = _FakeHomeSearchExecutor();
+    await _pumpHome(tester, appState, search);
+    search.invocations.single.complete(items: [
+      _item('t1', '种子一'),
+      _item('t2', '种子二'),
+      _item('t3', '种子三'),
+    ]);
+    await tester.pumpAndSettle();
+
+    // 平时顶栏显示站点名
+    expect(find.text('已选'), findsNothing);
+
+    await tester.longPress(find.byType(TorrentListItem).first);
+    await tester.pumpAndSettle();
+    expect(find.text('已选 1 个种子'), findsOneWidget);
+
+    // 再点一个：计数随选中集合增长
+    await tester.tap(find.byType(TorrentListItem).at(1));
+    await tester.pumpAndSettle();
+    expect(find.text('已选 2 个种子'), findsOneWidget);
+
+    // 取消后恢复站点名标题
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('已选'), findsNothing);
   });
 }
 

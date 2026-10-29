@@ -44,6 +44,7 @@ class AggregateSearchView extends StatefulWidget {
     required this.onSearchRequested,
     required this.onExitRequested,
     this.onSelectionModeChanged,
+    this.onSelectionCountChanged,
     this.onSearchAvailabilityChanged,
     this.searchService,
   });
@@ -53,6 +54,7 @@ class AggregateSearchView extends StatefulWidget {
   final VoidCallback onSearchRequested;
   final VoidCallback onExitRequested;
   final ValueChanged<bool>? onSelectionModeChanged;
+  final ValueChanged<int>? onSelectionCountChanged;
   final ValueChanged<bool>? onSearchAvailabilityChanged;
   final AggregateSearchService? searchService;
 
@@ -517,18 +519,19 @@ class AggregateSearchViewState extends State<AggregateSearchView> {
                         onPressed: _isBatchRunning
                             ? null
                             : () {
-                                if (_selectedItems.length ==
-                                    provider.filteredResults.length) {
-                                  setState(() => _selectedItems.clear());
-                                } else {
-                                  setState(() {
+                                setState(() {
+                                  if (_selectedItems.length ==
+                                      provider.filteredResults.length) {
+                                    _selectedItems.clear();
+                                  } else {
                                     _selectedItems.addAll(
                                       provider.filteredResults.map(
                                         (e) => e.identity,
                                       ),
                                     );
-                                  });
-                                }
+                                  }
+                                });
+                                _reportSelectionCount();
                               },
                         style: TextButton.styleFrom(
                           padding: const EdgeInsets.symmetric(horizontal: 0),
@@ -1328,6 +1331,7 @@ class AggregateSearchViewState extends State<AggregateSearchView> {
         _selectedItems.addAll(newSelection);
         _lastSelectedIndex = currentIndex;
       });
+      _reportSelectionCount();
 
       // Auto-scrolling logic inside list area
       if (_listController.hasClients) {
@@ -1356,6 +1360,7 @@ class AggregateSearchViewState extends State<AggregateSearchView> {
         _preDragSelectedItems = Set<String>.from(_selectedItems);
       });
       widget.onSelectionModeChanged?.call(_isSelectionMode);
+      _reportSelectionCount();
     }
   }
 
@@ -1405,6 +1410,7 @@ class AggregateSearchViewState extends State<AggregateSearchView> {
         _lastSelectedIndex = index;
       });
       widget.onSelectionModeChanged?.call(_isSelectionMode);
+      _reportSelectionCount();
     }
   }
 
@@ -1805,6 +1811,11 @@ class AggregateSearchViewState extends State<AggregateSearchView> {
     );
   }
 
+  /// 把当前选中数量同步给顶栏（首页 AppBar 用它显示「已选 N 个种子」）
+  void _reportSelectionCount() {
+    widget.onSelectionCountChanged?.call(_selectedItems.length);
+  }
+
   // 取消选中模式
   void _onCancelSelection() {
     final wasSelecting = _isSelectionMode;
@@ -1818,6 +1829,7 @@ class AggregateSearchViewState extends State<AggregateSearchView> {
         _preDragSelectedItems.clear();
       });
       if (wasSelecting) widget.onSelectionModeChanged?.call(false);
+      widget.onSelectionCountChanged?.call(0);
     }
   }
 

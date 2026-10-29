@@ -1742,6 +1742,7 @@ class _HomePageState extends State<HomePage> {
   HomeSearchRequest? _aggregateRequest;
   int _aggregateSearchSequence = 0;
   bool _aggregateSelectionMode = false;
+  int _aggregateSelectionCount = 0;
   bool _aggregateSearchAvailable = true;
   bool _openingSearchDialog = false;
 
@@ -3021,6 +3022,7 @@ class _HomePageState extends State<HomePage> {
         setState(() {
           _searchMode = HomeSearchMode.aggregate;
           _aggregateSelectionMode = false;
+          _aggregateSelectionCount = 0;
           _aggregateRequest = HomeSearchRequest(
             mode: HomeSearchMode.aggregate,
             keyword: result.keyword,
@@ -3057,6 +3059,7 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _searchMode = HomeSearchMode.currentSite;
       _aggregateSelectionMode = false;
+      _aggregateSelectionCount = 0;
       _aggregateSearchAvailable = true;
       _lastPressedAt = null;
     });
@@ -3354,7 +3357,13 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               title: _isAggregateMode
-                  ? const Text('聚合搜索 - PT-Mate')
+                  ? Text(
+                      _aggregateSelectionMode
+                          ? '聚合搜索 · 已选 $_aggregateSelectionCount 个种子'
+                          : '聚合搜索 - PT-Mate',
+                    )
+                  : _isSelectionMode
+                  ? Text('已选 ${_selectedItems.length} 个种子')
                   : InkWell(
                       borderRadius: BorderRadius.circular(8),
                       onTap: () {
@@ -3417,6 +3426,12 @@ class _HomePageState extends State<HomePage> {
                         return;
                       }
                       setState(() => _aggregateSelectionMode = selected);
+                    },
+                    onSelectionCountChanged: (count) {
+                      if (!mounted || _aggregateSelectionCount == count) {
+                        return;
+                      }
+                      setState(() => _aggregateSelectionCount = count);
                     },
                     onSearchAvailabilityChanged: (available) {
                       if (!mounted || _aggregateSearchAvailable == available) {

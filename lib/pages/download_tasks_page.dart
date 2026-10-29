@@ -387,15 +387,50 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
     return '加载任务失败: $e';
   }
 
+  /// 多选态顶栏的紧凑图标按钮：更小图标 + 更紧间距，把宽度让给「已选 N 项」
+  Widget _buildCompactAction({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+  }) {
+    return IconButton(
+      tooltip: tooltip,
+      iconSize: 20,
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+      icon: Icon(icon),
+      onPressed: onPressed,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ResponsiveLayout(
       currentRoute: '/download_tasks',
       appBar: AppBar(
-        title: Text(_selectionMode ? '已选 ${_selectedHashes.length} 项' : '下载管理'),
+        // 多选态下按钮多，整体收紧：窄标题、小图标、紧间距，给「已选 N 项」留出位置
+        titleSpacing: _selectionMode ? 0 : null,
+        toolbarHeight: _selectionMode ? 48 : null,
+        title: _selectionMode
+            ? Text(
+                '已选 ${_selectedHashes.length} 项',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              )
+            : const Text('下载管理'),
+        leadingWidth: _selectionMode ? 40 : null,
         leading: _selectionMode
             ? IconButton(
                 tooltip: '退出批量选择',
+                iconSize: 20,
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                 icon: const Icon(Icons.close),
                 onPressed: () {
                   setState(() {
@@ -407,32 +442,40 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
             : null,
         actions: [
           if (_selectionMode) ...[
-            IconButton(
+            _buildCompactAction(
+              icon: Icons.select_all,
               tooltip: '全选',
-              icon: const Icon(Icons.select_all),
               onPressed: _selectAll,
             ),
-            IconButton(
+            _buildCompactAction(
+              icon: Icons.pause,
               tooltip: '批量暂停',
-              icon: const Icon(Icons.pause),
               onPressed: _selectedHashes.isEmpty ? null : () => _bulkPause(),
             ),
-            IconButton(
+            _buildCompactAction(
+              icon: Icons.play_arrow,
               tooltip: '批量恢复',
-              icon: const Icon(Icons.play_arrow),
               onPressed: _selectedHashes.isEmpty ? null : () => _bulkResume(),
             ),
+            // 更多批量操作收进这个菜单，避免顶栏塞满挤压标题
             PopupMenuButton<String>(
-              tooltip: '批量操作',
+              tooltip: '更多批量操作',
               enabled: _selectedHashes.isNotEmpty,
-              icon: const Icon(Icons.drive_file_rename_outline),
+              padding: EdgeInsets.zero,
+              iconSize: 20,
+              icon: const Icon(Icons.more_vert),
               onSelected: (value) {
-                if (value == 'category') {
-                  _bulkSetCategory();
-                } else if (value == 'tags') {
-                  _bulkAddTags();
-                } else if (value == 'autoManagement') {
-                  _bulkSetAutoManagement();
+                switch (value) {
+                  case 'category':
+                    _bulkSetCategory();
+                  case 'tags':
+                    _bulkAddTags();
+                  case 'autoManagement':
+                    _bulkSetAutoManagement();
+                  case 'more':
+                    _showPriorityMenu();
+                  case 'delete':
+                    _bulkDelete();
                 }
               },
               itemBuilder: (context) => [
@@ -465,12 +508,25 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                       title: Text('批量自动种子管理'),
                     ),
                   ),
+                const PopupMenuItem<String>(
+                  value: 'more',
+                  child: ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.tune),
+                    title: Text('更多操作…'),
+                  ),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'delete',
+                  child: ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.delete_outline, color: Colors.red),
+                    title: Text('删除选中任务', style: TextStyle(color: Colors.red)),
+                  ),
+                ),
               ],
-            ),
-            IconButton(
-              tooltip: '批量删除',
-              icon: const Icon(Icons.delete_outline),
-              onPressed: _selectedHashes.isEmpty ? null : () => _bulkDelete(),
             ),
           ] else ...[
             const QbSpeedIndicator(),
@@ -998,101 +1054,131 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
   void _showPriorityMenu() {
     showModalBottomSheet<int>(
       context: context,
+      // 操作项较多，允许超过默认半屏高度并内部滚动，避免底部几项被裁掉
+      isScrollControlled: true,
+      showDragHandle: true,
       builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              title: const Text(
-                '批量操作',
-                style: TextStyle(fontWeight: FontWeight.bold),
+        top: false,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(sheetContext).size.height * 0.85,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 8, 4),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        '批量操作',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20),
+                      tooltip: '关闭',
+                      onPressed: () => Navigator.pop(sheetContext),
+                    ),
+                  ],
+                ),
               ),
-              trailing: IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: () => Navigator.pop(sheetContext),
+              const Divider(height: 1),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.arrow_upward),
+                        title: const Text('队列上移'),
+                        subtitle: const Text('在下载队列中前移一位'),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          _queueAction('队列上移', (c, h) => c.increasePriority(h));
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.arrow_downward),
+                        title: const Text('队列下移'),
+                        subtitle: const Text('在下载队列中后移一位'),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          _queueAction('队列下移', (c, h) => c.decreasePriority(h));
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.vertical_align_top),
+                        title: const Text('队列置顶'),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          _queueAction('队列置顶', (c, h) => c.topPriority(h));
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.vertical_align_bottom),
+                        title: const Text('队列置底'),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          _queueAction('队列置底', (c, h) => c.bottomPriority(h));
+                        },
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.folder_copy_outlined),
+                        title: const Text('批量修改分类'),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          _bulkSetCategory();
+                        },
+                      ),
+                      if (_supportsTags)
+                        ListTile(
+                          leading: const Icon(Icons.label_outline),
+                          title: const Text('批量添加标签'),
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            _bulkAddTags();
+                          },
+                        ),
+                      if (_supportsAutoManagement)
+                        ListTile(
+                          leading: const Icon(Icons.autorenew),
+                          title: const Text('批量自动种子管理'),
+                          subtitle: const Text('按分类保存路径跟随文件位置'),
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            _bulkSetAutoManagement();
+                          },
+                        ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.replay),
+                        title: const Text('批量重新校验'),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          _bulkRecheck();
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.sync),
+                        title: const Text('批量重新宣告'),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          _bulkReannounce();
+                        },
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.arrow_upward),
-              title: const Text('队列上移'),
-              subtitle: const Text('在下载队列中前移一位'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _queueAction('队列上移', (c, h) => c.increasePriority(h));
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.arrow_downward),
-              title: const Text('队列下移'),
-              subtitle: const Text('在下载队列中后移一位'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _queueAction('队列下移', (c, h) => c.decreasePriority(h));
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.vertical_align_top),
-              title: const Text('队列置顶'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _queueAction('队列置顶', (c, h) => c.topPriority(h));
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.vertical_align_bottom),
-              title: const Text('队列置底'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _queueAction('队列置底', (c, h) => c.bottomPriority(h));
-              },
-            ),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.folder_copy_outlined),
-              title: const Text('批量修改分类'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _bulkSetCategory();
-              },
-            ),
-            if (_supportsTags)
-              ListTile(
-                leading: const Icon(Icons.label_outline),
-                title: const Text('批量添加标签'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _bulkAddTags();
-                },
-              ),
-            if (_supportsAutoManagement)
-              ListTile(
-                leading: const Icon(Icons.autorenew),
-                title: const Text('批量自动种子管理'),
-                subtitle: const Text('按分类保存路径跟随文件位置'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _bulkSetAutoManagement();
-                },
-              ),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.replay),
-              title: const Text('批量重新校验'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _bulkRecheck();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.sync),
-              title: const Text('批量重新宣告'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _bulkReannounce();
-              },
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1899,52 +1985,70 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
 
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       builder: (sheetContext) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                title: const Text(
-                  '切换下载器',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                trailing: IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(sheetContext),
-                ),
-              ),
-              const Divider(height: 1),
-              ...configs.map((config) {
-                final isActive = config.id == defaultId;
-                return ListTile(
-                  leading: Icon(
-                    isActive
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_off,
-                    color: isActive ? Theme.of(context).primaryColor : null,
+          top: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.85,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  title: const Text(
+                    '切换下载器',
+                    style: TextStyle(fontWeight: FontWeight.bold),
                   ),
-                  title: Text(config.name),
-                  subtitle: Text('${config.type.displayName} - ${config.host}'),
-                  onTap: () async {
-                    Navigator.pop(sheetContext);
-                    if (!isActive) {
-                      await StorageService.instance.saveDownloaderConfigs(
-                        configs,
-                        defaultId: config.id,
+                  trailing: IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(sheetContext),
+                  ),
+                ),
+                const Divider(height: 1),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: configs.map((config) {
+                      final isActive = config.id == defaultId;
+                      return ListTile(
+                        leading: Icon(
+                          isActive
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_off,
+                          color: isActive
+                              ? Theme.of(context).primaryColor
+                              : null,
+                        ),
+                        title: Text(config.name),
+                        subtitle: Text(
+                          '${config.type.displayName} - ${config.host}',
+                        ),
+                        onTap: () async {
+                          Navigator.pop(sheetContext);
+                          if (!isActive) {
+                            await StorageService.instance.saveDownloaderConfigs(
+                              configs,
+                              defaultId: config.id,
+                            );
+                            DownloaderService.instance.notifyConfigChanged(
+                              config.id,
+                            );
+                            if (mounted) {
+                              NotificationHelper.showInfo(
+                                context,
+                                '已切换至 ${config.name}',
+                              );
+                            }
+                          }
+                        },
                       );
-                      DownloaderService.instance.notifyConfigChanged(config.id);
-                      if (mounted) {
-                        NotificationHelper.showInfo(
-                          context,
-                          '已切换至 ${config.name}',
-                        );
-                      }
-                    }
-                  },
-                );
-              }),
-            ],
+                    }).toList(),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
