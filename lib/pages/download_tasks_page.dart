@@ -902,6 +902,29 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
       allowCreate: true,
     );
     if (category == null) return;
+    final count = _selectedHashes.length;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('批量修改分类'),
+        content: Text(
+          category.isEmpty
+              ? '将清除 $count 个任务的分类，确认继续？'
+              : '将把这 $count 个任务修改为分类"$category"，确认继续？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('确认修改'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
     try {
       await DownloaderService.instance.setCategory(
         config: config,
@@ -1300,6 +1323,33 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                       _pruneSelectionToVisible();
                     },
                   ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              // 「显示全部」开关：关闭时仅显示活跃任务，开启后包含已完成等非活跃状态
+              Tooltip(
+                message: _showAllTasks
+                    ? '当前显示全部任务，点击仅显示活跃任务'
+                    : '当前仅显示活跃任务，点击显示全部任务',
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('显示全部', style: TextStyle(fontSize: 12)),
+                    Transform.scale(
+                      scale: 0.8,
+                      child: Switch.adaptive(
+                        value: _showAllTasks,
+                        onChanged: (value) async {
+                          setState(() {
+                            _showAllTasks = value;
+                          });
+                          _pruneSelectionToVisible();
+                          await StorageService.instance
+                              .saveDownloadTasksShowAll(value);
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
