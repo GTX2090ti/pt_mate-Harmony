@@ -32,6 +32,9 @@ class WebAdapterCore {
       'AppleWebKit/537.36 (KHTML, like Gecko) '
       'Chrome/143.0.0.0 Safari/537.36';
 
+  /// `{name}` 占位符；替换请求参数时高频调用，预编译避免重复构建。
+  static final RegExp _placeholderRegExp = RegExp(r'\{([A-Za-z0-9_]+)\}');
+
   static Dio createCookieDio(SiteConfig config) {
     final dio = Dio(
       BaseOptions(
@@ -135,7 +138,7 @@ class WebAdapterCore {
     String source,
     Map<String, dynamic> variables,
   ) {
-    return source.replaceAllMapped(RegExp(r'\{([A-Za-z0-9_]+)\}'), (match) {
+    return source.replaceAllMapped(_placeholderRegExp, (match) {
       final value = variables[match.group(1)];
       return value == null ? '' : value.toString();
     });
@@ -295,6 +298,15 @@ class WebAdapterDiagnostic {
 /// 以站点 JSON 模板驱动的搜索列表解析器。
 class WebSearchParser {
   WebSearchParser._();
+
+  // 以下正则位于逐行解析路径上（每个种子行都会经过），提到静态常量以避免
+  // 每次调用重新编译。正则编译成本约为匹配本身的 10 倍，大列表解析时明显。
+  static final RegExp _classSplitRegExp = RegExp(r'[\s,\[\]]+');
+  static final RegExp _positionalPrefixRegExp =
+      RegExp(r'^@@(?:td|th):nth-child\(\d+\)');
+  static final RegExp _nthChildShiftRegExp =
+      RegExp(r'\b(td|th):nth-child\((\d+)\)');
+  static final RegExp _torrentIdRegExp = RegExp(r'[?&](?:torrentid|id)=(\d+)');
 
   static WebSearchParseResult parse({
     required String html,
@@ -487,7 +499,7 @@ class WebSearchParser {
     }
     return raw
         .toString()
-        .split(RegExp(r'[\s,\[\]]+'))
+        .split(_classSplitRegExp)
         .where((item) => item.isNotEmpty)
         .contains(className);
   }
@@ -557,7 +569,7 @@ class WebSearchParser {
       final field = _map(rawValue);
       final selector = field['selector'];
       if (selector is String &&
-          RegExp(r'^@@(?:td|th):nth-child\(\d+\)').hasMatch(selector)) {
+          _positionalPrefixRegExp.hasMatch(selector)) {
         field['selector'] = selector.substring(2);
       }
       return MapEntry(key, field);
@@ -629,7 +641,7 @@ class WebSearchParser {
       final selector = field['selector'];
       if (selector is String) {
         field['selector'] = selector.replaceAllMapped(
-          RegExp(r'\b(td|th):nth-child\((\d+)\)'),
+          _nthChildShiftRegExp,
           (match) {
             final index = int.parse(match.group(2)!);
             return '${match.group(1)}:nth-child(${index > offset ? index - offset : 1})';
@@ -723,7 +735,7 @@ class WebSearchParser {
     final fromQuery =
         uri?.queryParameters['torrentid'] ?? uri?.queryParameters['id'];
     if (fromQuery != null && fromQuery.isNotEmpty) return fromQuery;
-    final match = RegExp(r'[?&](?:torrentid|id)=(\d+)').firstMatch(url);
+    final match = _torrentIdRegExp.firstMatch(url);
     return match?.group(1);
   }
 
@@ -792,6 +804,9 @@ class WebSearchParser {
 
 /// 仅通过内置 Web 模板工作的通用 Cookie/HTML 站点适配器。
 class WebAdapter extends SiteAdapter {
+  /// 诊断输出里剥离 query/hash 用的分隔正则。
+  static final RegExp _querySplitRegExp = RegExp(r'[?#]');
+
   WebAdapter({Dio? dio, this.diagnosticSink}) : _providedDio = dio;
 
   static final Logger _logger = Logger();
@@ -960,7 +975,7 @@ class WebAdapter extends SiteAdapter {
     final uri = Uri.tryParse(path);
     final parsedPath = uri?.path;
     if (parsedPath != null && parsedPath.isNotEmpty) return parsedPath;
-    final withoutQuery = path.split(RegExp(r'[?#]')).first.trim();
+    final withoutQuery = path.split(_querySplitRegExp).first.trim();
     return withoutQuery.isEmpty ? '/' : withoutQuery;
   }
 

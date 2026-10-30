@@ -24,16 +24,33 @@ class _QbSpeedIndicatorState extends State<QbSpeedIndicator> {
   ServerState? _serverState;
   String? _err;
 
+  // 每 5 秒轮询一次；下载器配置在轮询间隔内基本不变，原实现每次都重新
+  // 读 SharedPreferences + JSON 解码，属纯重复 I/O。这里缓存解析结果，
+  // 仅在配置变更事件或默认下载器切换时失效。
+  DownloaderConfig? _cachedConfig;
+  String? _cachedPassword;
+  String? _cachedConfigId;
+  StreamSubscription<String>? _configChangeSubscription;
+
   @override
   void initState() {
     super.initState();
     _fetch();
     _timer = Timer.periodic(const Duration(seconds: 5), (_) => _fetch());
+    // 下载器切换或配置改动时丢弃缓存，确保下一次轮询读到新配置。
+    _configChangeSubscription =
+        DownloaderService.instance.configChangeStream.listen((_) {
+      _cachedConfig = null;
+      _cachedPassword = null;
+      _cachedConfigId = null;
+      _fetch();
+    });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _configChangeSubscription?.cancel();
     super.dispose();
   }
 
@@ -49,37 +66,47 @@ class _QbSpeedIndicatorState extends State<QbSpeedIndicator> {
         return;
       }
 
-      final configs = await StorageService.instance.loadDownloaderConfigs();
-      if (configs.isEmpty) {
-        setState(() {
-          _err = '没有配置任何下载器';
-          _info = null;
-          _serverState = null;
-        });
-        return;
-      }
-
-      // 查找默认客户端
-      DownloaderConfig? defaultClient;
-      for (final configMap in configs) {
-        if (configMap['id'] == defId) {
-          defaultClient = DownloaderConfig.fromJson(configMap);
-          break;
-        }
-      }
+      // 命中缓存时跳过配置读取与密码读取的磁盘 I/O。
+      DownloaderConfig? defaultClient = _cachedConfigId == defId
+          ? _cachedConfig
+          : null;
+      String? pwd = _cachedConfigId == defId ? _cachedPassword : null;
 
       if (defaultClient == null) {
-        setState(() {
-          _err = '未找到默认下载器 ID: $defId，请重新设置默认下载器';
-          _info = null;
-          _serverState = null;
-        });
-        return;
-      }
+        final configs = await StorageService.instance.loadDownloaderConfigs();
+        if (configs.isEmpty) {
+          setState(() {
+            _err = '没有配置任何下载器';
+            _info = null;
+            _serverState = null;
+          });
+          return;
+        }
 
-      final pwd = await StorageService.instance.loadDownloaderPassword(
-        defaultClient.id,
-      );
+        // 查找默认客户端
+        for (final configMap in configs) {
+          if (configMap['id'] == defId) {
+            defaultClient = DownloaderConfig.fromJson(configMap);
+            break;
+          }
+        }
+
+        if (defaultClient == null) {
+          setState(() {
+            _err = '未找到默认下载器 ID: $defId，请重新设置默认下载器';
+            _info = null;
+            _serverState = null;
+          });
+          return;
+        }
+
+        pwd = await StorageService.instance.loadDownloaderPassword(
+          defaultClient.id,
+        );
+        _cachedConfig = defaultClient;
+        _cachedPassword = pwd;
+        _cachedConfigId = defId;
+      }
       if ((pwd ?? '').isEmpty) {
         setState(() {
           _err = '未保存密码';
