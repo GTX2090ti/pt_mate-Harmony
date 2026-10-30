@@ -556,8 +556,8 @@ class _SiteSelectionDialogState extends State<_SiteSelectionDialog> {
   static const double _gridLineAllowance = 4;
 
   /// 上一次布局实测到的网格单元格尺寸（供 _scrollToActiveSite 粗定位用）。
-  ({double itemWidth, double itemHeight, int crossAxisCount}) _gridMetricsCache =
-      (itemWidth: 88, itemHeight: 88, crossAxisCount: 3);
+  ({double itemWidth, double itemHeight, int crossAxisCount})
+  _gridMetricsCache = (itemWidth: 88, itemHeight: 88, crossAxisCount: 3);
 
   /// 按「网格真实可用宽度」计算单元格尺寸。
   ///
@@ -584,8 +584,7 @@ class _SiteSelectionDialogState extends State<_SiteSelectionDialog> {
         ? 5
         : (availableWidth >= 420 ? 4 : 3);
     final double itemWidth =
-        (availableWidth - (crossAxisCount - 1) * _gridSpacing) /
-            crossAxisCount;
+        (availableWidth - (crossAxisCount - 1) * _gridSpacing) / crossAxisCount;
 
     final double nameLine =
         _gridNameFontSize * _gridLineHeight + _gridLineAllowance;
@@ -615,8 +614,10 @@ class _SiteSelectionDialogState extends State<_SiteSelectionDialog> {
     if (_isGridView) {
       final metrics = _gridMetricsCache;
       final row = index ~/ metrics.crossAxisCount;
-      roughOffset = (row * (metrics.itemHeight + _gridSpacing))
-          .clamp(0.0, double.infinity);
+      roughOffset = (row * (metrics.itemHeight + _gridSpacing)).clamp(
+        0.0,
+        double.infinity,
+      );
     } else {
       const itemHeight = 74.0;
       roughOffset = (index * itemHeight).clamp(0.0, double.infinity);
@@ -900,8 +901,7 @@ class _SiteSelectionDialogState extends State<_SiteSelectionDialog> {
                                   itemCount: _filteredSites.length,
                                   gridDelegate:
                                       SliverGridDelegateWithFixedCrossAxisCount(
-                                        crossAxisCount:
-                                            metrics.crossAxisCount,
+                                        crossAxisCount: metrics.crossAxisCount,
                                         mainAxisSpacing: _gridSpacing,
                                         crossAxisSpacing: _gridSpacing,
                                         // 用固定高度替代 childAspectRatio，
@@ -1630,9 +1630,9 @@ class MTeamAppState extends State<MTeamApp> with WidgetsBindingObserver {
                                   children: [
                                     Icon(
                                       Icons.warning_amber_rounded,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .error,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.error,
                                     ),
                                     const SizedBox(width: 12),
                                     const Expanded(
@@ -1714,14 +1714,15 @@ class MTeamAppState extends State<MTeamApp> with WidgetsBindingObserver {
   }
 }
 
-typedef HomeTorrentSearchExecutor = Future<TorrentSearchResult> Function({
-  required SiteConfig siteConfig,
-  required String? keyword,
-  required int pageNumber,
-  required int pageSize,
-  required int? onlyFav,
-  required Map<String, dynamic>? additionalParams,
-});
+typedef HomeTorrentSearchExecutor =
+    Future<TorrentSearchResult> Function({
+      required SiteConfig siteConfig,
+      required String? keyword,
+      required int pageNumber,
+      required int pageSize,
+      required int? onlyFav,
+      required Map<String, dynamic>? additionalParams,
+    });
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key, this.searchExecutor, this.aggregateSearchService});
@@ -2268,12 +2269,12 @@ class _HomePageState extends State<HomePage> {
                         ),
                         style: TextButton.styleFrom(
                           alignment: Alignment.centerLeft,
-                          backgroundColor: Theme.of(context)
-                              .colorScheme
-                              .primaryContainer,
-                          foregroundColor: Theme.of(context)
-                              .colorScheme
-                              .onPrimaryContainer,
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.primaryContainer,
+                          foregroundColor: Theme.of(
+                            context,
+                          ).colorScheme.onPrimaryContainer,
                           elevation: 0,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
@@ -2326,8 +2327,9 @@ class _HomePageState extends State<HomePage> {
                         child: Container(
                           decoration: BoxDecoration(
                             color: _sortBy == 'none'
-                                ? Theme.of(context).colorScheme.primary
-                                      .withValues(alpha: 0.1)
+                                ? Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withValues(alpha: 0.1)
                                 : null,
                             borderRadius: BorderRadius.circular(4),
                           ),
@@ -2354,8 +2356,9 @@ class _HomePageState extends State<HomePage> {
                         child: Container(
                           decoration: BoxDecoration(
                             color: _sortBy == 'size'
-                                ? Theme.of(context).colorScheme.primary
-                                      .withValues(alpha: 0.1)
+                                ? Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withValues(alpha: 0.1)
                                 : null,
                             borderRadius: BorderRadius.circular(4),
                           ),
@@ -2384,8 +2387,9 @@ class _HomePageState extends State<HomePage> {
                         child: Container(
                           decoration: BoxDecoration(
                             color: _sortBy == 'upload'
-                                ? Theme.of(context).colorScheme.primary
-                                      .withValues(alpha: 0.1)
+                                ? Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withValues(alpha: 0.1)
                                 : null,
                             borderRadius: BorderRadius.circular(4),
                           ),
@@ -2414,8 +2418,9 @@ class _HomePageState extends State<HomePage> {
                         child: Container(
                           decoration: BoxDecoration(
                             color: _sortBy == 'download'
-                                ? Theme.of(context).colorScheme.primary
-                                      .withValues(alpha: 0.1)
+                                ? Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withValues(alpha: 0.1)
                                 : null,
                             borderRadius: BorderRadius.circular(4),
                           ),
@@ -3567,9 +3572,9 @@ class _HomePageState extends State<HomePage> {
                           '请先配置站点信息以开始使用应用',
                           style: Theme.of(context).textTheme.bodyLarge
                               ?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
                           textAlign: TextAlign.center,
                         ),
@@ -3615,9 +3620,9 @@ class _HomePageState extends State<HomePage> {
                                     Icon(
                                       Icons.search_off,
                                       size: 64,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .outline,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.outline,
                                     ),
                                     const SizedBox(height: 16),
                                     Text(
@@ -3628,9 +3633,9 @@ class _HomePageState extends State<HomePage> {
                                           .textTheme
                                           .titleMedium
                                           ?.copyWith(
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .outline,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.outline,
                                           ),
                                     ),
                                     const SizedBox(height: 8),
@@ -3640,9 +3645,9 @@ class _HomePageState extends State<HomePage> {
                                           .textTheme
                                           .bodySmall
                                           ?.copyWith(
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .outline,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.outline,
                                           ),
                                     ),
                                   ],
@@ -3686,35 +3691,41 @@ class _HomePageState extends State<HomePage> {
                             return MetaData(
                               metaData: index,
                               behavior: HitTestBehavior.translucent,
-                              child: TorrentListItem(
-                                torrent: item,
-                                isSelected: isSelected,
-                                isSelectionMode: _isSelectionMode,
-                                currentSite: _currentSite,
-                                showCoverSetting: showCoverSetting,
-                                batchOperationType: _batchProgress?.actionType,
-                                batchItemState: _batchItemStateFor(item.id),
-                                batchErrorMessage: _batchItemErrorFor(item.id),
-                                onRetryBatchAction: _buildRetryCallbackForItem(
-                                  item,
+                              // 与聚合搜索页保持一致：把每个种子项隔离成独立
+                              // 重绘图层，滚动时只重绘新进入视口的条目。
+                              child: RepaintBoundary(
+                                child: TorrentListItem(
+                                  torrent: item,
+                                  isSelected: isSelected,
+                                  isSelectionMode: _isSelectionMode,
+                                  currentSite: _currentSite,
+                                  showCoverSetting: showCoverSetting,
+                                  batchOperationType:
+                                      _batchProgress?.actionType,
+                                  batchItemState: _batchItemStateFor(item.id),
+                                  batchErrorMessage: _batchItemErrorFor(
+                                    item.id,
+                                  ),
+                                  onRetryBatchAction:
+                                      _buildRetryCallbackForItem(item),
+                                  onCoverTap: () => _openCoverGallery(index),
+                                  onTap: () => _isSelectionMode
+                                      ? _onToggleSelection(item, index)
+                                      : _onTorrentTap(item),
+                                  onLongPress: () => _onLongPress(item, index),
+                                  onToggleCollection:
+                                      _isBatchActionRunning(
+                                        BatchOperationType.favorite,
+                                      )
+                                      ? null
+                                      : () => _onToggleCollection(item),
+                                  onDownload:
+                                      _isBatchActionRunning(
+                                        BatchOperationType.download,
+                                      )
+                                      ? null
+                                      : () => _onDownload(item),
                                 ),
-                                onCoverTap: () => _openCoverGallery(index),
-                                onTap: () => _isSelectionMode
-                                    ? _onToggleSelection(item, index)
-                                    : _onTorrentTap(item),
-                                onLongPress: () => _onLongPress(item, index),
-                                onToggleCollection:
-                                    _isBatchActionRunning(
-                                      BatchOperationType.favorite,
-                                    )
-                                    ? null
-                                    : () => _onToggleCollection(item),
-                                onDownload:
-                                    _isBatchActionRunning(
-                                      BatchOperationType.download,
-                                    )
-                                    ? null
-                                    : () => _onDownload(item),
                               ),
                             );
                           },
@@ -3817,9 +3828,9 @@ class _HomePageState extends State<HomePage> {
                         padding: const EdgeInsets.symmetric(horizontal: 0),
                         textStyle: const TextStyle(fontSize: 13),
                         backgroundColor: Theme.of(context).colorScheme.primary,
-                        foregroundColor: Theme.of(context)
-                            .colorScheme
-                            .onPrimary,
+                        foregroundColor: Theme.of(
+                          context,
+                        ).colorScheme.onPrimary,
                       ),
                       child: Text('下载 (${_selectedItems.length})'),
                     ),

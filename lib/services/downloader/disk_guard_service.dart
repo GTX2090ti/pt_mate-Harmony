@@ -16,17 +16,26 @@ class DiskGuardService {
 
   static const String _configKey = 'downloader.diskGuardConfig.v1';
 
+  // 任务页每次刷新都会读这份配置，而它只在用户改设置时变化。
+  // 缓存解码结果，避免轮询期间反复 JSON.parse 同一段文本。
+  DiskGuardConfig? _cachedConfig;
+
   /// 读取磁盘守卫配置
   Future<DiskGuardConfig> loadConfig() async {
+    final cached = _cachedConfig;
+    if (cached != null) return cached;
+
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_configKey);
-    if (raw == null || raw.isEmpty) return const DiskGuardConfig();
+    if (raw == null || raw.isEmpty) {
+      return _cachedConfig = const DiskGuardConfig();
+    }
     try {
-      return DiskGuardConfig.fromJson(
+      return _cachedConfig = DiskGuardConfig.fromJson(
         jsonDecode(raw) as Map<String, dynamic>,
       );
     } catch (_) {
-      return const DiskGuardConfig();
+      return _cachedConfig = const DiskGuardConfig();
     }
   }
 
@@ -34,6 +43,7 @@ class DiskGuardService {
   Future<void> saveConfig(DiskGuardConfig config) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_configKey, jsonEncode(config.toJson()));
+    _cachedConfig = config;
   }
 
   /// 判断剩余空间是否触发预警

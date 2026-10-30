@@ -49,7 +49,6 @@ extension SortFieldLabel on SortField {
   };
 }
 
-
 class DownloadTasksPage extends StatefulWidget {
   const DownloadTasksPage({super.key});
 
@@ -175,6 +174,11 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
   // 排序状态
   SortField _sortField = SortField.addedOn;
   bool _sortAscending = false;
+
+  // 过滤 + 排序结果缓存。列表在滚动时每帧都会重建，而任务数据与筛选条件
+  // 通常几十秒才变一次；签名命中时直接复用，避免每帧重排上千条任务。
+  List<DownloadTask>? _cachedView;
+  String? _cachedViewKey;
 
   // 状态筛选 Tab（qB 风格）
   TaskFilter _statusFilter = TaskFilter.all;
@@ -669,9 +673,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                   icon: const Icon(Icons.settings, color: Colors.white),
                   onPressed: () {
                     Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const QbSettingsPage(),
-                      ),
+                      MaterialPageRoute(builder: (_) => const QbSettingsPage()),
                     );
                   },
                 ),
@@ -735,6 +737,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
       NotificationHelper.showError(context, '删除任务失败: $e');
     }
   }
+
   // ===== 批量操作 =====
   /// 批量模式下轻点或长按同一行都是勾选/取消；取消到空集就自动退出批量模式
   void _toggleTaskSelection(DownloadTask task) {
@@ -750,7 +753,8 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
   void _selectAll() {
     final visibleHashes = _buildFilteredTasks().map((t) => t.hash).toSet();
     setState(() {
-      if (visibleHashes.isNotEmpty && _selectedHashes.containsAll(visibleHashes)) {
+      if (visibleHashes.isNotEmpty &&
+          _selectedHashes.containsAll(visibleHashes)) {
         _selectedHashes.removeAll(visibleHashes);
       } else {
         _selectedHashes.addAll(visibleHashes);
@@ -758,9 +762,25 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
     });
   }
 
-  /// 当前可见的任务（与 _buildAllTasksList 共用同一份过滤实现）
+  /// 过滤条件签名：任一项变化都会让缓存失效。
+  String _viewSignature() {
+    final categories = _categoryFilter.toList()..sort();
+    final tags = _tagFilter.toList()..sort();
+    return '${identityHashCode(_tasks)}|$_statusFilter|$_showAllTasks|'
+        '$_sortField|$_sortAscending|$_searchQuery|'
+        '${categories.join(",")}|${tags.join(",")}';
+  }
+
+  /// 当前可见的任务，已按 [_sortField] 排序。
+  ///
+  /// 与 _buildAllTasksList 共用同一份过滤实现，并带签名缓存：滚动导致的
+  /// 每帧重建不会重复过滤与排序。
   List<DownloadTask> _buildFilteredTasks() {
-    return filterVisibleTasks(
+    final key = _viewSignature();
+    final cached = _cachedView;
+    if (cached != null && key == _cachedViewKey) return cached;
+
+    final filtered = filterVisibleTasks(
       tasks: _tasks,
       statusFilter: _statusFilter,
       showAllTasks: _showAllTasks,
@@ -768,6 +788,36 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
       tagFilter: _tagFilter,
       searchQuery: _searchQuery,
     );
+
+    filtered.sort((a, b) {
+      final cmp = _compareTasks(a, b);
+      return _sortAscending ? cmp : -cmp;
+    });
+
+    _cachedView = filtered;
+    _cachedViewKey = key;
+    return filtered;
+  }
+
+  int _compareTasks(DownloadTask a, DownloadTask b) {
+    switch (_sortField) {
+      case SortField.name:
+        return a.name.compareTo(b.name);
+      case SortField.dlSpeed:
+        return a.dlspeed.compareTo(b.dlspeed);
+      case SortField.upSpeed:
+        return a.upspeed.compareTo(b.upspeed);
+      case SortField.addedOn:
+        return a.addedOn.compareTo(b.addedOn);
+      case SortField.completionOn:
+        return a.completionOn.compareTo(b.completionOn);
+      case SortField.ratio:
+        return a.ratio.compareTo(b.ratio);
+      case SortField.size:
+        return a.size.compareTo(b.size);
+      case SortField.progress:
+        return a.progress.compareTo(b.progress);
+    }
   }
 
   /// 当筛选条件变化时，从选中集合里剔除已被筛掉的项
@@ -787,7 +837,10 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
       if (client == null) return;
       await client.pauseTasks(_selectedHashes.toList());
       if (!mounted) return;
-      NotificationHelper.showInfo(context, '已暂停 ' + _selectedHashes.length.toString() + ' 个任务');
+      NotificationHelper.showInfo(
+        context,
+        '已暂停 ' + _selectedHashes.length.toString() + ' 个任务',
+      );
       setState(() {
         _selectionMode = false;
         _selectedHashes.clear();
@@ -805,7 +858,10 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
       if (client == null) return;
       await client.resumeTasks(_selectedHashes.toList());
       if (!mounted) return;
-      NotificationHelper.showInfo(context, '已恢复 ' + _selectedHashes.length.toString() + ' 个任务');
+      NotificationHelper.showInfo(
+        context,
+        '已恢复 ' + _selectedHashes.length.toString() + ' 个任务',
+      );
       setState(() {
         _selectionMode = false;
         _selectedHashes.clear();
@@ -841,7 +897,10 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
       if (client == null) return;
       await client.deleteTasks(_selectedHashes.toList(), deleteFiles: confirm);
       if (!mounted) return;
-      NotificationHelper.showInfo(context, '已删除 ' + _selectedHashes.length.toString() + ' 个任务');
+      NotificationHelper.showInfo(
+        context,
+        '已删除 ' + _selectedHashes.length.toString() + ' 个任务',
+      );
       setState(() {
         _selectionMode = false;
         _selectedHashes.clear();
@@ -1045,10 +1104,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
   /// 都查过），队列只能相对移动或置顶/置底，所以这里走那四个真实存在的端点。
   Future<void> _queueAction(
     String label,
-    Future<void> Function(
-      TorrentManagementClient client,
-      List<String> hashes,
-    )
+    Future<void> Function(TorrentManagementClient client, List<String> hashes)
     action,
   ) async {
     final client = _getClient();
@@ -1213,7 +1269,10 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
       if (client == null) return;
       await client.recheckTorrents(_selectedHashes.toList());
       if (!mounted) return;
-      NotificationHelper.showInfo(context, '已发起 ' + _selectedHashes.length.toString() + ' 个任务校验');
+      NotificationHelper.showInfo(
+        context,
+        '已发起 ' + _selectedHashes.length.toString() + ' 个任务校验',
+      );
       setState(() {
         _selectionMode = false;
         _selectedHashes.clear();
@@ -1230,7 +1289,10 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
       if (client == null) return;
       await client.reannounceTorrents(_selectedHashes.toList());
       if (!mounted) return;
-      NotificationHelper.showInfo(context, '已重新宣告 ' + _selectedHashes.length.toString() + ' 个任务');
+      NotificationHelper.showInfo(
+        context,
+        '已重新宣告 ' + _selectedHashes.length.toString() + ' 个任务',
+      );
       setState(() {
         _selectionMode = false;
         _selectedHashes.clear();
@@ -1392,11 +1454,9 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
       color: Theme.of(context).colorScheme.errorContainer,
       child: InkWell(
         onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const DownloadHealthPage(),
-            ),
-          );
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const DownloadHealthPage()));
         },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1431,11 +1491,9 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
       color: Colors.green.withValues(alpha: 0.12),
       child: InkWell(
         onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const DownloadHealthPage(),
-            ),
-          );
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const DownloadHealthPage()));
         },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1458,39 +1516,8 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
 
   Widget _buildAllTasksList() {
     // 过滤与全选作用域共用同一份实现：屏幕上看到多少，批量操作就只能作用于多少
+    // 过滤与排序由 _buildFilteredTasks 统一提供（带签名缓存）。
     final filteredTasks = _buildFilteredTasks();
-
-    // 排序
-    filteredTasks.sort((a, b) {
-      int cmp;
-      switch (_sortField) {
-        case SortField.name:
-          cmp = a.name.compareTo(b.name);
-          break;
-        case SortField.dlSpeed:
-          cmp = a.dlspeed.compareTo(b.dlspeed);
-          break;
-        case SortField.upSpeed:
-          cmp = a.upspeed.compareTo(b.upspeed);
-          break;
-        case SortField.addedOn:
-          cmp = a.addedOn.compareTo(b.addedOn);
-          break;
-        case SortField.completionOn:
-          cmp = a.completionOn.compareTo(b.completionOn);
-          break;
-        case SortField.ratio:
-          cmp = a.ratio.compareTo(b.ratio);
-          break;
-        case SortField.size:
-          cmp = a.size.compareTo(b.size);
-          break;
-        case SortField.progress:
-          cmp = a.progress.compareTo(b.progress);
-          break;
-      }
-      return _sortAscending ? cmp : -cmp;
-    });
 
     if (filteredTasks.isEmpty) {
       return Center(
@@ -1709,9 +1736,8 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                 ? options.entries.toList()
                 : options.entries
                       .where(
-                        (e) => _optionLabel(e.key).toLowerCase().contains(
-                          query,
-                        ),
+                        (e) =>
+                            _optionLabel(e.key).toLowerCase().contains(query),
                       )
                       .toList();
             return Padding(
@@ -1790,9 +1816,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                                 padding: const EdgeInsets.only(bottom: 28),
                                 child: Center(
                                   child: Text(
-                                    options.isEmpty
-                                        ? '暂无$title'
-                                        : '没有匹配的结果',
+                                    options.isEmpty ? '暂无$title' : '没有匹配的结果',
                                     style: TextStyle(color: scheme.outline),
                                   ),
                                 ),
@@ -2162,9 +2186,7 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
       statusText = '错误';
       statusColor = Theme.of(context).colorScheme.error;
     } else if (task.progress >= 1.0) {
-      statusText = task.state == DownloadTaskState.pausedUP
-          ? '已完成·暂停'
-          : '已完成';
+      statusText = task.state == DownloadTaskState.pausedUP ? '已完成·暂停' : '已完成';
       statusColor = Colors.green;
     } else if (DownloadTaskState.isDownloading(task.state)) {
       statusText = '下载中';
@@ -2193,10 +2215,8 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
         }
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => TrackerManagerPage(
-              taskHash: task.hash,
-              taskName: task.name,
-            ),
+            builder: (_) =>
+                TrackerManagerPage(taskHash: task.hash, taskName: task.name),
           ),
         );
       },
@@ -2265,9 +2285,8 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                             Expanded(
                               child: Text(
                                 task.name,
-                                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
+                                style: Theme.of(context).textTheme.titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w600),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -2294,41 +2313,14 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                           ],
                         ),
                         const SizedBox(height: 4),
-                      // Category and Tags
-                      if (task.category.isNotEmpty || task.tags.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Row(
-                            children: [
-                              if (task.category.isNotEmpty)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primaryContainer,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    task.category,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onPrimaryContainer,
-                                    ),
-                                  ),
-                                ),
-                              if (task.category.isNotEmpty &&
-                                  task.tags.isNotEmpty)
-                                const SizedBox(width: 6),
-                              ...task.tags.map(
-                                (tag) => Padding(
-                                  padding: const EdgeInsets.only(right: 4),
-                                  child: Container(
+                        // Category and Tags
+                        if (task.category.isNotEmpty || task.tags.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Row(
+                              children: [
+                                if (task.category.isNotEmpty)
+                                  Container(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 6,
                                       vertical: 2,
@@ -2336,237 +2328,271 @@ class _DownloadTasksPageState extends State<DownloadTasksPage> {
                                     decoration: BoxDecoration(
                                       color: Theme.of(
                                         context,
-                                      ).colorScheme.secondaryContainer,
+                                      ).colorScheme.primaryContainer,
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
-                                      tag,
+                                      task.category,
                                       style: TextStyle(
                                         fontSize: 10,
                                         color: Theme.of(
                                           context,
-                                        ).colorScheme.onSecondaryContainer,
+                                        ).colorScheme.onPrimaryContainer,
+                                      ),
+                                    ),
+                                  ),
+                                if (task.category.isNotEmpty &&
+                                    task.tags.isNotEmpty)
+                                  const SizedBox(width: 6),
+                                ...task.tags.map(
+                                  (tag) => Padding(
+                                    padding: const EdgeInsets.only(right: 4),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.secondaryContainer,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        tag,
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSecondaryContainer,
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
+                              ],
+                            ),
+                          ),
+                        // Status Info Row 1: Static Info
+                        Row(
+                          children: [
+                            // Size
+                            Text(
+                              FormatUtil.formatFileSize(task.size),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Theme.of(context).colorScheme.secondary,
                               ),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Uploaded
+                            Icon(
+                              Icons.upload_file,
+                              size: 12,
+                              color: Theme.of(context).colorScheme.secondary,
+                            ),
+                            const SizedBox(width: 2),
+                            Text(
+                              FormatUtil.formatFileSize(task.uploaded),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Theme.of(context).colorScheme.secondary,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Ratio
+                            Icon(
+                              Icons.compare_arrows,
+                              size: 12,
+                              color: Theme.of(context).colorScheme.secondary,
+                            ),
+                            const SizedBox(width: 2),
+                            Text(
+                              task.ratio.toStringAsFixed(2),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Theme.of(context).colorScheme.secondary,
+                              ),
+                            ),
+                          ],
                         ),
-                      // Status Info Row 1: Static Info
-                      Row(
-                        children: [
-                          // Size
-                          Text(
-                            FormatUtil.formatFileSize(task.size),
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Theme.of(context).colorScheme.secondary,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          // Uploaded
-                          Icon(
-                            Icons.upload_file,
-                            size: 12,
-                            color: Theme.of(context).colorScheme.secondary,
-                          ),
-                          const SizedBox(width: 2),
-                          Text(
-                            FormatUtil.formatFileSize(task.uploaded),
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Theme.of(context).colorScheme.secondary,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          // Ratio
-                          Icon(
-                            Icons.compare_arrows,
-                            size: 12,
-                            color: Theme.of(context).colorScheme.secondary,
-                          ),
-                          const SizedBox(width: 2),
-                          Text(
-                            task.ratio.toStringAsFixed(2),
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Theme.of(context).colorScheme.secondary,
-                            ),
-                          ),
-                        ],
-                      ),
 
-                      // Status Info Row 2: Dynamic Info (Speed & ETA)
-                      if (task.dlspeed > 0 ||
-                          task.upspeed > 0 ||
-                          (isDownloading &&
-                              task.eta > 0 &&
-                              task.eta < kInfinityEtaInSeconds))
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Row(
-                            children: [
-                              // DL Speed
-                              if (task.dlspeed > 0) ...[
-                                Icon(
-                                  Icons.download,
-                                  size: 12,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                                const SizedBox(width: 2),
-                                Text(
-                                  FormatUtil.formatSpeed(task.dlspeed),
-                                  style: TextStyle(
-                                    fontSize: 11,
+                        // Status Info Row 2: Dynamic Info (Speed & ETA)
+                        if (task.dlspeed > 0 ||
+                            task.upspeed > 0 ||
+                            (isDownloading &&
+                                task.eta > 0 &&
+                                task.eta < kInfinityEtaInSeconds))
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Row(
+                              children: [
+                                // DL Speed
+                                if (task.dlspeed > 0) ...[
+                                  Icon(
+                                    Icons.download,
+                                    size: 12,
                                     color: Theme.of(
                                       context,
                                     ).colorScheme.primary,
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                              ],
-                              // UP Speed
-                              if (task.upspeed > 0) ...[
-                                Icon(
-                                  Icons.upload,
-                                  size: 12,
-                                  color: Theme.of(context).colorScheme.tertiary,
-                                ),
-                                const SizedBox(width: 2),
-                                Text(
-                                  FormatUtil.formatSpeed(task.upspeed),
-                                  style: TextStyle(
-                                    fontSize: 11,
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    FormatUtil.formatSpeed(task.dlspeed),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                ],
+                                // UP Speed
+                                if (task.upspeed > 0) ...[
+                                  Icon(
+                                    Icons.upload,
+                                    size: 12,
                                     color: Theme.of(
                                       context,
                                     ).colorScheme.tertiary,
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                              ],
-                              // ETA
-                              if (isDownloading &&
-                                  task.eta > 0 &&
-                                  task.eta < kInfinityEtaInSeconds) ...[
-                                Icon(
-                                  Icons.timer,
-                                  size: 12,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.secondary,
-                                ),
-                                const SizedBox(width: 2),
-                                Text(
-                                  FormatUtil.formatEta(task.eta),
-                                  style: TextStyle(
-                                    fontSize: 11,
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    FormatUtil.formatSpeed(task.upspeed),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.tertiary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                ],
+                                // ETA
+                                if (isDownloading &&
+                                    task.eta > 0 &&
+                                    task.eta < kInfinityEtaInSeconds) ...[
+                                  Icon(
+                                    Icons.timer,
+                                    size: 12,
                                     color: Theme.of(
                                       context,
                                     ).colorScheme.secondary,
                                   ),
-                                ),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    FormatUtil.formatEta(task.eta),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.secondary,
+                                    ),
+                                  ),
+                                ],
                               ],
-                            ],
+                            ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                // Actions
-                if (_selectionMode)
-                  IconButton(
-                    icon: const Icon(Icons.more_vert, size: 20),
-                    tooltip: '批量操作',
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
+                  // Actions
+                  if (_selectionMode)
+                    IconButton(
+                      icon: const Icon(Icons.more_vert, size: 20),
+                      tooltip: '批量操作',
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                      padding: EdgeInsets.zero,
+                      onPressed: _showPriorityMenu,
+                    )
+                  else ...[
+                    IconButton(
+                      icon: Icon(
+                        isPaused
+                            ? Icons.play_arrow_rounded
+                            : Icons.pause_rounded,
+                        size: 20,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      tooltip: isPaused ? '恢复' : '暂停',
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                      padding: EdgeInsets.zero,
+                      onPressed: () => isPaused
+                          ? _resumeTask(task.hash)
+                          : _pauseTask(task.hash),
                     ),
-                    padding: EdgeInsets.zero,
-                    onPressed: _showPriorityMenu,
-                  )
-                else ...[
-                  IconButton(
-                    icon: Icon(
-                      isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-                      size: 20,
-                      color: Theme.of(context).colorScheme.primary,
+                    IconButton(
+                      icon: const Icon(Icons.folder_outlined, size: 20),
+                      tooltip: '修改分类',
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                      padding: EdgeInsets.zero,
+                      onPressed: () => _setTaskCategory(task),
                     ),
-                    tooltip: isPaused ? '恢复' : '暂停',
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
+                    IconButton(
+                      icon: const Icon(
+                        Icons.delete_outline,
+                        size: 20,
+                        color: Colors.red,
+                      ),
+                      tooltip: '删除',
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                      padding: EdgeInsets.zero,
+                      onPressed: () => _confirmDelete(task),
                     ),
-                    padding: EdgeInsets.zero,
-                    onPressed: () =>
-                        isPaused ? _resumeTask(task.hash) : _pauseTask(task.hash),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.folder_outlined, size: 20),
-                    tooltip: '修改分类',
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
-                    ),
-                    padding: EdgeInsets.zero,
-                    onPressed: () => _setTaskCategory(task),
-                  ),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.delete_outline,
-                      size: 20,
-                      color: Colors.red,
-                    ),
-                    tooltip: '删除',
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
-                    ),
-                    padding: EdgeInsets.zero,
-                    onPressed: () => _confirmDelete(task),
-                  ),
+                  ],
                 ],
-              ],
-            ),
+              ),
 
-            const SizedBox(height: 6),
+              const SizedBox(height: 6),
 
-            // Progress Bar
-            Row(
-              children: [
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(2),
-                    child: LinearProgressIndicator(
-                      value: task.progress,
-                      minHeight: 4,
-                      backgroundColor: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHighest,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        isDownloading
-                            ? Theme.of(context).colorScheme.primary
-                            : (task.progress >= 1.0
-                                  ? Colors.green
-                                  : Theme.of(context).colorScheme.secondary),
+              // Progress Bar
+              Row(
+                children: [
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: LinearProgressIndicator(
+                        value: task.progress,
+                        minHeight: 4,
+                        backgroundColor: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          isDownloading
+                              ? Theme.of(context).colorScheme.primary
+                              : (task.progress >= 1.0
+                                    ? Colors.green
+                                    : Theme.of(context).colorScheme.secondary),
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${(task.progress * 100).toStringAsFixed(1)}%',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
+                  const SizedBox(width: 8),
+                  Text(
+                    '${(task.progress * 100).toStringAsFixed(1)}%',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
-      ),
       ),
     );
   }

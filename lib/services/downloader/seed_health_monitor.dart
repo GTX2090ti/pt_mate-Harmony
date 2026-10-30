@@ -37,17 +37,25 @@ class SeedHealthMonitor {
     _timer = null;
   }
 
+  // 与 DiskGuardService 同理：任务页轮询高频读取，配置本身很少变化。
+  SeedHealthConfig? _cachedConfig;
+
   /// 读取健康度配置
   Future<SeedHealthConfig> loadConfig() async {
+    final cached = _cachedConfig;
+    if (cached != null) return cached;
+
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_configKey);
-    if (raw == null || raw.isEmpty) return const SeedHealthConfig();
+    if (raw == null || raw.isEmpty) {
+      return _cachedConfig = const SeedHealthConfig();
+    }
     try {
-      return SeedHealthConfig.fromJson(
+      return _cachedConfig = SeedHealthConfig.fromJson(
         jsonDecode(raw) as Map<String, dynamic>,
       );
     } catch (_) {
-      return const SeedHealthConfig();
+      return _cachedConfig = const SeedHealthConfig();
     }
   }
 
@@ -55,6 +63,7 @@ class SeedHealthMonitor {
   Future<void> saveConfig(SeedHealthConfig config) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_configKey, jsonEncode(config.toJson()));
+    _cachedConfig = config;
   }
 
   /// 对任务列表计算健康度

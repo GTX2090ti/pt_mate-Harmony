@@ -302,10 +302,12 @@ class WebSearchParser {
   // 以下正则位于逐行解析路径上（每个种子行都会经过），提到静态常量以避免
   // 每次调用重新编译。正则编译成本约为匹配本身的 10 倍，大列表解析时明显。
   static final RegExp _classSplitRegExp = RegExp(r'[\s,\[\]]+');
-  static final RegExp _positionalPrefixRegExp =
-      RegExp(r'^@@(?:td|th):nth-child\(\d+\)');
-  static final RegExp _nthChildShiftRegExp =
-      RegExp(r'\b(td|th):nth-child\((\d+)\)');
+  static final RegExp _positionalPrefixRegExp = RegExp(
+    r'^@@(?:td|th):nth-child\(\d+\)',
+  );
+  static final RegExp _nthChildShiftRegExp = RegExp(
+    r'\b(td|th):nth-child\((\d+)\)',
+  );
   static final RegExp _torrentIdRegExp = RegExp(r'[?&](?:torrentid|id)=(\d+)');
 
   static WebSearchParseResult parse({
@@ -568,8 +570,7 @@ class WebSearchParser {
       if (rawValue is! Map) return MapEntry(key, rawValue);
       final field = _map(rawValue);
       final selector = field['selector'];
-      if (selector is String &&
-          _positionalPrefixRegExp.hasMatch(selector)) {
+      if (selector is String && _positionalPrefixRegExp.hasMatch(selector)) {
         field['selector'] = selector.substring(2);
       }
       return MapEntry(key, field);
@@ -640,13 +641,12 @@ class WebSearchParser {
       final field = _map(rawValue);
       final selector = field['selector'];
       if (selector is String) {
-        field['selector'] = selector.replaceAllMapped(
-          _nthChildShiftRegExp,
-          (match) {
-            final index = int.parse(match.group(2)!);
-            return '${match.group(1)}:nth-child(${index > offset ? index - offset : 1})';
-          },
-        );
+        field['selector'] = selector.replaceAllMapped(_nthChildShiftRegExp, (
+          match,
+        ) {
+          final index = int.parse(match.group(2)!);
+          return '${match.group(1)}:nth-child(${index > offset ? index - offset : 1})';
+        });
       }
       return MapEntry(key, field);
     });

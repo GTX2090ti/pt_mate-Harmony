@@ -38,13 +38,13 @@ class _QbSpeedIndicatorState extends State<QbSpeedIndicator> {
     _fetch();
     _timer = Timer.periodic(const Duration(seconds: 5), (_) => _fetch());
     // 下载器切换或配置改动时丢弃缓存，确保下一次轮询读到新配置。
-    _configChangeSubscription =
-        DownloaderService.instance.configChangeStream.listen((_) {
-      _cachedConfig = null;
-      _cachedPassword = null;
-      _cachedConfigId = null;
-      _fetch();
-    });
+    _configChangeSubscription = DownloaderService.instance.configChangeStream
+        .listen((_) {
+          _cachedConfig = null;
+          _cachedPassword = null;
+          _cachedConfigId = null;
+          _fetch();
+        });
   }
 
   @override
