@@ -69,6 +69,7 @@ ohos/HoKit/
 /hap/
 
 # iOS 产物不上传 GitHub：IPA 只在本地与 Codemagic 产物库中保存，禁止提交/发布
+/IPA/
 *.ipa
 *.ipa.sha256
 
