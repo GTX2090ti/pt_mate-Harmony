@@ -90,7 +90,10 @@ workflows:
           mkdir -p build/ios/ipa/Payload
           cp -R "$APP" build/ios/ipa/Payload/Runner.app
           cd build/ios/ipa
-          zip -qry PTMate-214-unsigned.ipa Payload
-          ls -lh PTMate-214-unsigned.ipa
+          VERSION="$(sed -n 's/^version:[[:space:]]*//p' ../../../pubspec.yaml | head -1 | cut -d+ -f2)"
+          test -n "$VERSION"
+          NAME="PTMate-${VERSION}-unsigned.ipa"
+          zip -qry "$NAME" Payload
+          ls -lh "$NAME"
     artifacts:
       - build/ios/ipa/*.ipa
