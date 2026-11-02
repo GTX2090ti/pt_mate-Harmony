@@ -40,3 +40,10 @@ This repository contains a Flutter client and a small Go backend.
   - linked issue/PR number when applicable (for example `#93`),
   - screenshots/GIFs for UI changes,
   - notes for config/data updates (especially `assets/sites/` and manifest regeneration).
+
+## Release Guidelines
+- **Publishing a GitHub Release must also update the repository homepage `README.md`** in the same change: the version line (`当前版本 **ohos-vX.Y.Z**（应用版本 \`A.B.C+N\`）`), the 「在自用版中新增的功能」 section, and the 「已修复的问题」 section. Commit and push README and code *before* creating the Release and uploading assets, so the homepage never shows a stale version.
+- Keep `pubspec.yaml` `version:` and `ohos/local.properties` `flutter.versionCode` in sync with the published build.
+- HarmonyOS releases follow the `ohos-vX.Y.Z` tag scheme and keep `versionName` unchanged while incrementing the build number (e.g. `2.29.5+216` → `2.29.5+217`).
+- Attach the unsigned HAP (`hap/PTMate-<build>-unsigned.hap`) plus its `.sha256` to the Release.
+- iOS IPAs are **not** uploaded to GitHub: they stay in the local `IPA/` folder and the Codemagic artifact store only.
