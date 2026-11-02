@@ -82,6 +82,20 @@ flutter build hap --release
 
 产物位于 `build/ohos/hap/`，未签名包 `entry-default-unsigned.hap` 可直接通过 hdc 安装调试。
 
+### 构建与归档一条命令
+
+```bash
+./scripts/build_hap.sh            # 构建 + 落盘 hap/ + 生成 sha256 + 归档历史版本
+./scripts/build_hap.sh --keep 3   # 顶层额外保留最近 3 个版本
+./scripts/archive_hap.sh          # 只做归档
+```
+
+- 产物按版本号命名落到 `hap/PTMate-<build>-unsigned.hap`，并生成同名 `.sha256`
+- 历史版本自动移入 `hap/archive/`，`hap/` 顶层只留当前最新版本，方便一眼确认「现在装哪个」
+- 归档只移动不删除；同名文件已存在则跳过，不会覆盖
+- 脚本会自动处理 DevEco Studio 工具链的 `PATH` 与 `NODE_HOME`
+- 可用 `DEVECO_STUDIO_HOME`、`FLUTTER_HOME` 覆盖默认安装路径
+
 ## 文档
 
 完整索引见 [文档中心](./docs/README.md)，常用入口：

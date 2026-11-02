@@ -47,3 +47,4 @@ This repository contains a Flutter client and a small Go backend.
 - HarmonyOS releases follow the `ohos-vX.Y.Z` tag scheme and keep `versionName` unchanged while incrementing the build number (e.g. `2.29.5+216` → `2.29.5+217`).
 - Attach the unsigned HAP (`hap/PTMate-<build>-unsigned.hap`) plus its `.sha256` to the Release.
 - iOS IPAs are **not** uploaded to GitHub: they stay in the local `IPA/` folder and the Codemagic artifact store only.
+- After building a HAP, place it in `hap/PTMate-<build>-unsigned.hap` with a matching `.sha256`, and archive superseded builds with `./scripts/archive_hap.sh` (or use `./scripts/build_hap.sh`, which does build + checksum + archive in one step). The `hap/` top level keeps only the current build; older ones live in `hap/archive/`.
