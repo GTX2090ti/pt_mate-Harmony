@@ -11,7 +11,8 @@ import '../widgets/responsive_layout.dart';
 import '../widgets/update_notification_dialog.dart';
 
 const _repositoryUrl = 'https://github.com/JustLookAtNow/pt_mate';
-const _releasesUrl = '$_repositoryUrl/releases';
+const _ohosRepositoryUrl = 'https://github.com/GTX2090ti/pt_mate-Harmony';
+const _ohosReleasesUrl = '$_ohosRepositoryUrl/releases';
 const _issuesUrl = '$_repositoryUrl/issues';
 const _telegramUrl = 'https://t.me/pt_mate';
 const _userGuideUrl = '$_repositoryUrl/blob/master/docs/USER_GUIDE.md';
@@ -152,7 +153,7 @@ class _AboutBody extends StatelessWidget {
             _UpdateCard(
               version: version,
               onCheckUpdate: onCheckUpdate,
-              onOpenReleases: () => onOpenUrl(_releasesUrl),
+              onOpenReleases: () => onOpenUrl(_ohosReleasesUrl),
             ),
             const SizedBox(height: 16),
             _SectionTitle(icon: Icons.explore_outlined, title: '快捷入口'),
@@ -397,8 +398,20 @@ class _LinkGrid extends StatelessWidget {
     final links = [
       _LinkAction(
         icon: Icons.code,
-        title: 'GitHub 仓库',
-        subtitle: '查看源码与发布记录',
+        title: '鸿蒙版仓库',
+        subtitle: 'PT-Mate 鸿蒙适配源码与发布记录',
+        url: _ohosRepositoryUrl,
+      ),
+      _LinkAction(
+        icon: Icons.download_outlined,
+        title: '鸿蒙版 Releases',
+        subtitle: '下载未签名 HAP 安装包',
+        url: _ohosReleasesUrl,
+      ),
+      _LinkAction(
+        icon: Icons.code,
+        title: '上游原版仓库',
+        subtitle: 'JustLookAtNow/pt_mate 上游源码',
         url: _repositoryUrl,
       ),
       _LinkAction(
