@@ -1,6 +1,8 @@
 # PT-Mate
 
-[简体中文](./README.zh-CN.md)
+> **This file is archived**: a snapshot of a previous root README, no longer maintained. Site lists, hook notes, and other data are outdated. See the root [README](../README.md) and the [documentation index](./README.md) for current information.
+
+[简体中文（归档）](./README-zh-CN-archived.md)
 
 A Flutter-based private tracker client built with Material Design 3. PT-Mate supports torrent browsing, search, and download management across multiple PT site types.
 
@@ -40,9 +42,9 @@ The following list is based on `assets/sites/*.json` (40 total):
 ## Screenshots
 
 <p align="center">
-  <img src="screenshots/1.png" width="600" alt="Screenshot 1">
-  <img src="screenshots/2.jpg" width="300" alt="Screenshot 2">
-  <img src="screenshots/3.jpg" width="300" alt="Screenshot 3">
+  <img src="../screenshots/1.png" width="600" alt="Screenshot 1">
+  <img src="../screenshots/2.jpg" width="300" alt="Screenshot 2">
+  <img src="../screenshots/3.jpg" width="300" alt="Screenshot 3">
 </p>
 
 ## Cookie Cloud Sync & Critical Security Warning
@@ -104,15 +106,15 @@ https://raw.githubusercontent.com/JustLookAtNow/pt_mate/refs/heads/master/altsou
 
 ## Documentation
 
-- [Documentation Index](./docs/README.md)
-- [User Guide](./docs/USER_GUIDE.md)
-- [Development Guide](./docs/DEVELOPMENT_GUIDE.md)
-- [Site Configuration Guide](./docs/SITE_CONFIGURATION_GUIDE.md)
-- [API Docs](./docs/api)
+- [Documentation Index](./README.md)
+- [User Guide](./USER_GUIDE.md)
+- [Development Guide](./DEVELOPMENT_GUIDE.md)
+- [Site Configuration Guide](./SITE_CONFIGURATION_GUIDE.md)
+- [API Docs](./api)
 
 ## License
 
-MIT License. See [LICENSE](./LICENSE) for details.
+MIT License. See [LICENSE](../LICENSE) for details.
 
 ## Star History
 

@@ -8,7 +8,7 @@
 
 - `assets/sites/` - 存放具体网站的配置文件
 - `assets/site_configs.json` - 存放默认模板配置
-- `assets/sites_manifest.json` - 网站清单文件（此文件不需要手动改动，增加配置文件后运行根目录下的generate_sites_manifest.sh即可自动生成也可以自行配置githook，详见[readme.md](./README.md)）
+- `assets/sites_manifest.json` - 网站清单文件（此文件不需要手动改动，增加配置文件后运行根目录下的 `generate_sites_manifest.sh` 即可自动生成；也可自行配置 Git hook 自动执行，详见 [Git Hook 机制说明](./GIT_HOOKS.md)）
 
 ## 配置文件类型
 
@@ -380,12 +380,10 @@ assets/sites/newsite.json
 
 ### 步骤 3：更新网站清单
 
-在 `assets/sites_manifest.json` 中添加新网站：
+不需要手动编辑 `assets/sites_manifest.json`。在仓库根目录运行清单生成脚本即可：
 
-```json
-{
-  "sites": ["mteam.json", "newsite.json"]
-}
+```bash
+./generate_sites_manifest.sh
 ```
 
 ### 步骤 4：测试配置
@@ -516,5 +514,3 @@ A:
 1. 查看现有配置文件作为参考
 2. 在 GitHub Issues 中提问
 3. 参考应用日志进行调试
-
----

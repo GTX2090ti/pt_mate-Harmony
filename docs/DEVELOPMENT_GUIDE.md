@@ -41,7 +41,7 @@ flutter pub get
 ./generate_sites_manifest.sh
 ```
 
-可选：在 `.git/hooks/pre-commit` 添加自动更新脚本。
+可选：配置 Git hook 在提交时自动执行（启用方式与风险说明见 [Git Hook 机制说明](./GIT_HOOKS.md)）。
 
 ### 运行应用
 

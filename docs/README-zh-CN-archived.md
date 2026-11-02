@@ -1,6 +1,8 @@
 # PT-Mate（PT伴侣）
 
-[English](./README.md)
+> **本文已归档**：这是历史版本根 README 的快照，不再维护。站点清单、hook 说明等数据均已过时，最新信息请以根目录 [README](../README.md) 与 [文档索引](./README.md) 为准。
+
+[English（归档）](./README-EN-archived.md)
 
 基于 Flutter（Material Design 3）开发的私有种子站点客户端，支持多种 PT 站点的种子浏览、搜索和下载管理。
 
@@ -38,9 +40,9 @@
 ## 截图预览
 
 <p align="center">
-  <img src="screenshots/1.png" width="600" alt="截图1">
-  <img src="screenshots/2.jpg" width="300" alt="截图2">
-  <img src="screenshots/3.jpg" width="300" alt="截图3">
+  <img src="../screenshots/1.png" width="600" alt="截图1">
+  <img src="../screenshots/2.jpg" width="300" alt="截图2">
+  <img src="../screenshots/3.jpg" width="300" alt="截图3">
 </p>
 
 ## Cookie Cloud 同步与安全警示
@@ -102,15 +104,15 @@ https://raw.githubusercontent.com/JustLookAtNow/pt_mate/refs/heads/master/altsou
 
 ## 文档
 
-- [文档目录](./docs/README.md)
-- [使用指南](./docs/USER_GUIDE.md)
-- [开发指南](./docs/DEVELOPMENT_GUIDE.md)
-- [网站配置指南](./docs/SITE_CONFIGURATION_GUIDE.md)
-- [API 文档目录](./docs/api)
+- [文档目录](./README.md)
+- [使用指南](./USER_GUIDE.md)
+- [开发指南](./DEVELOPMENT_GUIDE.md)
+- [网站配置指南](./SITE_CONFIGURATION_GUIDE.md)
+- [API 文档目录](./api)
 
 ## 许可证
 
-MIT License，详见 [LICENSE](./LICENSE)。
+MIT License，详见 [LICENSE](../LICENSE)。
 
 ## Star 趋势
 
